@@ -1,78 +1,66 @@
-# World Event Globe
+# GLOBE // Live Event Monitor
 
-A real-time, interactive 3D globe for tracking global conflicts, disasters, and geopolitical events. Built as a high-signal intelligence and news visualization tool.
+A self-contained, real-time 3D globe for tracking conflicts, unrest, disasters,
+and geopolitical events. One Python process, one port, zero external CDNs.
 
-## Features
+![style](https://img.shields.io/badge/aesthetic-ops%20console-orange)
 
-- **Live Event Ingestion**
-  - GDELT 2.0 (15-minute updates)
-  - RSS feeds from major conflict and humanitarian sources (ReliefWeb, EuObserver, Al Jazeera, etc.)
-  - Structured data with severity scoring, geolocation, and actor extraction
+## Design
 
-- **Interactive Three.js Globe**
-  - Realistic day/night cycle with accurate solar positioning
-  - Zoom-aware country and city labels (only major countries shown at wide zoom)
-  - Severity-scaled event markers with professional multi-layer animations
-  - Click any event for cleaned summary, casualties, actors, and direct link to source
+Deliberately **not** the usual glowing blue-marble look. The basemap is drawn
+procedurally at runtime from Natural Earth vector data (bundled TopoJSON) —
+flat graphite cartography, crisp country borders, a real day/night terminator,
+monospace UI, and a single amber→red severity palette.
 
-- **Backend**
-  - FastAPI + SQLite (FTS5 full-text search)
-  - APScheduler for automated ingestion
-  - Country profiles (World Bank data + regime type, nuclear status, risk indices)
-  - City profiles with strategic value tagging
+## Data sources (all public, no API keys)
 
-## Tech Stack
+| Channel | Source                         | Cadence | Notes                                    |
+|---------|--------------------------------|---------|------------------------------------------|
+| gdelt   | GDELT 2.0 events export        | 15 min  | CAMEO-coded conflict/unrest/diplomacy     |
+| usgs    | USGS earthquakes (M4.5+, week) | 15 min  | Exact coordinates + magnitude severity    |
+| gdacs   | GDACS disaster alerts          | 20 min  | Green/Orange/Red alert severity           |
+| rss     | BBC, Al Jazeera, UN, ReliefWeb, DW, France 24 | 10 min | Geolocated via built-in gazetteer |
 
-- **Frontend**: Three.js + OrbitControls, vanilla HTML/JS
-- **Backend**: FastAPI, APScheduler, httpx, feedparser, spaCy
-- **Database**: SQLite with FTS5
-- **Data Sources**: GDELT 2.0, RSS feeds, World Bank API
+Events are deduplicated by id and source URL, severity-scored 0–1, stored in
+SQLite with FTS5 full-text search, and pruned after 14 days.
 
-## Running Locally
+## Run
 
 ```bash
-cd /home/mike/globe
-./start-globe.sh
+./start.sh            # creates .venv on first run, then serves http://localhost:8090
 ```
 
-This starts:
-- FastAPI backend on `http://localhost:8091`
-- Static frontend on `http://localhost:8090`
-- Opens the globe in your default browser
+The UI shows clearly-labeled **sample data** until the first ingest completes
+(usually < 1 minute), then switches to LIVE automatically.
 
-## Project Structure
+## Layout
 
 ```
-globe/
-├── index.html              # Main Three.js globe frontend
-├── start-globe.sh          # Launcher script
-├── backend/
-│   ├── server.py           # FastAPI app
-│   ├── db.py               # SQLite layer + FTS5
-│   └── ingestion/
-│       ├── gdelt.py
-│       ├── rss.py
-│       ├── enrich.py
-│       ├── scheduler.py
-│       ├── countries.py
-│       └── cities.py
-├── data/
-│   └── globe.db
-└── README.md
+index.html               UI shell
+static/
+  app.js                 data layer, feed, filters, detail panel
+  globe.js               Three.js renderer (procedural basemap, markers, terminator)
+  styles.css             ops-console theme
+  vendor/                three.js, OrbitControls, topojson-client (vendored, offline-safe)
+data/
+  countries-50m.json     Natural Earth boundaries (render)
+  countries-110m.json    Natural Earth boundaries (gazetteer centroids)
+  sample-events.json     fallback dataset (fictional, labeled)
+backend/
+  server.py              FastAPI app + static serving + scheduler
+  ingest.py              GDELT / USGS / GDACS / RSS ingestion
+  geo.py                 gazetteer (country centroids derived from TopoJSON + city list)
+  db.py                  SQLite + FTS5
 ```
 
-## Roadmap
+## API
 
-- [ ] ACLED integration (high-quality structured conflict data)
-- [ ] Wikidata entity enrichment (leaders, alliances, sanctions)
-- [ ] Event detail deep links + source credibility scoring
-- [ ] Export / share current view
-- [ ] Mobile-responsive UI
+- `GET /api/events?since_hours=72&category=conflict,hazard&min_severity=0.45&q=sudan&limit=1500`
+- `GET /api/events/{id}`
+- `GET /api/stats` — counts, per-channel ingest log
+- `GET /api/health`
 
-## Notes
+## Env
 
-This project is designed as a personal intelligence tool. All data is pulled from public sources. No API keys are stored in the repository.
-
----
-
-Built with first-principles focus on clarity, signal, and real-world usefulness.
+- `PORT` — listen port (default 8090)
+- `GLOBE_NO_INGEST=1` — serve UI/API without background ingestion (dev)

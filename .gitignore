@@ -4,3 +4,6 @@ __pycache__/
 *.db-journal
 .DS_Store
 node_modules/
+.venv/
+data/globe.db
+data/globe.db-*
