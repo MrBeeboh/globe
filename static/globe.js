@@ -4,14 +4,27 @@ import * as THREE from 'three';
 import { OrbitControls } from '/static/vendor/OrbitControls.js';
 
 const PALETTE = {
-  ocean: '#08121f',
-  oceanDeep: '#050b14',
-  land: '#2e4150',
-  landHi: '#3d5566',
-  coast: '#7fa3b8aa',
-  graticule: 'rgba(95, 130, 160, 0.13)',
-  border3d: 0x7fa3b8,
+  ocean: '#1565c0',
+  oceanDeep: '#0a3d7a',
+  coast: 'rgba(235, 245, 255, 0.85)',
+  graticule: 'rgba(255, 255, 255, 0.10)',
+  border3d: 0xfff8e8,
+  // biome bands from pole to equator: ice, tundra, boreal, temperate, desert, tropics
+  biomes: [
+    [90, '#eef3f6'], [74, '#dde7ea'], [66, '#8aa18b'], [58, '#4f7a4a'],
+    [46, '#5e8a4e'], [36, '#9aa55e'], [27, '#c9b078'], [20, '#d3aa66'],
+    [12, '#7ca455'], [4, '#4e8a48'], [0, '#47854a'],
+  ],
 };
+
+function biomeGradient(ctx, H) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  for (const [lat, color] of PALETTE.biomes) {
+    g.addColorStop((90 - lat) / 180, color);        // northern band
+    g.addColorStop(1 - (90 - lat) / 180, color);    // mirrored southern band
+  }
+  return g;
+}
 
 export function sevColor(s) {
   if (s >= 0.7) return '#ff4632';
@@ -67,16 +80,47 @@ function buildTexture(countriesGeo) {
   ctx.stroke();
 
   const px = (lon, lat) => [(lon + 180) / 360 * W, (90 - lat) / 180 * H];
-  // land: gradient fill + a soft outer glow so coastlines pop against the ocean
-  const lg = ctx.createLinearGradient(0, 0, 0, H);
-  lg.addColorStop(0, PALETTE.land);
-  lg.addColorStop(0.5, PALETTE.landHi);
-  lg.addColorStop(1, PALETTE.land);
-  ctx.fillStyle = lg;
+
+  // land drawn on an offscreen layer so a latitude biome gradient can be
+  // masked into the landmass shapes (ice caps -> forests -> deserts -> tropics)
+  const land = document.createElement('canvas');
+  land.width = W; land.height = H;
+  const lctx = land.getContext('2d');
+  lctx.fillStyle = '#fff';
+  for (const f of countriesGeo.features) {
+    const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+    for (const poly of polys) {
+      lctx.beginPath();
+      for (const ring of poly) {
+        ring.forEach(([lon, lat], i) => {
+          const [x, y] = px(lon, lat);
+          i === 0 ? lctx.moveTo(x, y) : lctx.lineTo(x, y);
+        });
+        lctx.closePath();
+      }
+      lctx.fill('evenodd');
+    }
+  }
+  lctx.globalCompositeOperation = 'source-in';
+  lctx.fillStyle = biomeGradient(lctx, H);
+  lctx.fillRect(0, 0, W, H);
+  // mottled speckle so the land reads as terrain rather than flat fill
+  lctx.globalCompositeOperation = 'source-atop';
+  for (let i = 0; i < 24000; i++) {
+    const x = Math.random() * W, y = Math.random() * H;
+    const s = 1 + Math.random() * 3;
+    lctx.fillStyle = Math.random() < 0.5 ? 'rgba(0,40,0,0.05)' : 'rgba(255,250,210,0.05)';
+    lctx.fillRect(x, y, s, s);
+  }
+  lctx.globalCompositeOperation = 'source-over';
+
+  // soft coastline glow under the land layer, then crisp coast stroke on top
+  ctx.shadowColor = 'rgba(190, 230, 255, 0.9)';
+  ctx.shadowBlur = 14;
+  ctx.drawImage(land, 0, 0);
+  ctx.shadowBlur = 0;
   ctx.strokeStyle = PALETTE.coast;
-  ctx.lineWidth = 1.6;
-  ctx.shadowColor = 'rgba(110, 160, 195, 0.55)';
-  ctx.shadowBlur = 10;
+  ctx.lineWidth = 1.4;
   for (const f of countriesGeo.features) {
     const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
     for (const poly of polys) {
@@ -88,11 +132,9 @@ function buildTexture(countriesGeo) {
         });
         ctx.closePath();
       }
-      ctx.fill('evenodd');
       ctx.stroke();
     }
   }
-  ctx.shadowBlur = 0;
 
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -137,8 +179,8 @@ const GLOBE_FRAG = `
     float d = dot(normalize(vNormal), sunDir);
     float day = smoothstep(-0.12, 0.22, d);
     // night side stays readable but clearly darker and cooler
-    vec3 night = c * vec3(0.55, 0.60, 0.72);
-    vec3 dayC  = c * vec3(1.30, 1.22, 1.05);
+    vec3 night = c * vec3(0.42, 0.45, 0.58);
+    vec3 dayC  = c * vec3(1.12, 1.08, 1.0);
     vec3 col = mix(night, dayC, day);
     // faint warm band along the terminator
     float term = smoothstep(0.0, 0.10, d) * (1.0 - smoothstep(0.10, 0.30, d));
@@ -156,8 +198,8 @@ const RIM_VERT = `
 const RIM_FRAG = `
   varying vec3 vNormal;
   void main() {
-    float i = pow(0.72 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 3.2);
-    gl_FragColor = vec4(vec3(0.28, 0.52, 0.88), 1.0) * i * 1.5;
+    float i = pow(0.74 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 3.0);
+    gl_FragColor = vec4(vec3(0.45, 0.70, 1.0), 1.0) * i * 1.8;
   }`;
 
 export class Globe {
@@ -174,7 +216,13 @@ export class Globe {
     this.scene.background = new THREE.Color(0x0b0c0d);
 
     this.camera = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
-    this.camera.position.copy(latLonToVec3(24, 15, 3.1));
+    // open on whichever major landmass is most in daylight right now
+    const sun = subsolarDirection(new Date());
+    const anchors = [[28, -95], [30, 15], [30, 95]]; // Americas, Europe/Africa, Asia
+    const best = anchors
+      .map(([lat, lon]) => ({ v: latLonToVec3(lat, lon, 1), d: latLonToVec3(lat, lon, 1).dot(sun) }))
+      .sort((a, b) => b.d - a.d)[0].v;
+    this.camera.position.copy(best.multiplyScalar(3.1));
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
