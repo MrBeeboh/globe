@@ -52,14 +52,29 @@ CREATE TABLE IF NOT EXISTS ingest_log (
 """
 
 
+def _open() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.executescript(SCHEMA)
+    return conn
+
+
 def get_conn() -> sqlite3.Connection:
     conn = getattr(_local, "conn", None)
     if conn is None:
         os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
-        conn = sqlite3.connect(DB_PATH, timeout=30)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.executescript(SCHEMA)
+        try:
+            conn = _open()
+        except sqlite3.Error:
+            # stale or corrupt database (e.g. left over from an older
+            # version): it is only a cache, so rebuild it from scratch
+            for suffix in ("", "-wal", "-shm"):
+                try:
+                    os.remove(DB_PATH + suffix)
+                except FileNotFoundError:
+                    pass
+            conn = _open()
         _local.conn = conn
     return conn
 
