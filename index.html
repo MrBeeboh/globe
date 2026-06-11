@@ -1,0 +1,2289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>World Event Globe</title>
+<style>
+  :root {
+    --bg: #0a0a14;
+    --surface: #111122;
+    --surface2: #1a1a30;
+    --text: #c8c8d4;
+    --text2: #8888a0;
+    --accent: #4da6ff;
+    --accent2: #ff6644;
+    --accent3: #ffaa22;
+    --accent4: #44dd88;
+    --accent5: #cc66ff;
+    --border: #1e1e38;
+    --radius: 10px;
+    --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg);
+    font-family: var(--font);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+  #globe-container {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #globe-container:active { cursor: grabbing; }
+  #globe-container.grabbing { cursor: grabbing; }
+
+  /* Sidebar */
+  #sidebar {
+    position: fixed;
+    right: 0; top: 0; bottom: 0;
+    width: 380px;
+    z-index: 10;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    transform: translateX(0);
+    transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  #sidebar.collapsed { transform: translateX(380px); }
+  #sidebar-toggle {
+    position: fixed;
+    right: 380px; top: 16px;
+    z-index: 11;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.35s cubic-bezier(0.4,0,0.2,1);
+  }
+  #sidebar.collapsed ~ #sidebar-toggle { right: 16px; }
+  #sidebar-toggle:hover { background: var(--surface2); border-color: var(--accent); }
+
+  .sidebar-header {
+    padding: 20px 20px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-header h2 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    color: #fff;
+  }
+  .sidebar-header .subtitle {
+    font-size: 12px;
+    color: var(--text2);
+    margin-top: 2px;
+  }
+  .sidebar-header .version-badge {
+    font-size: 10px;
+    font-weight: 700;
+    background: var(--accent);
+    color: #fff;
+    padding: 1px 7px;
+    border-radius: 10px;
+    vertical-align: middle;
+    margin-left: 4px;
+    letter-spacing: 0.5px;
+  }
+  .search-wrap {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .search-wrap input {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+    font-family: var(--font);
+  }
+  .search-wrap input:focus { border-color: var(--accent); }
+  .search-wrap input::placeholder { color: var(--text2); }
+
+  .filter-bar {
+    display: flex;
+    gap: 6px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .filter-btn {
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text2);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.2s;
+    white-space: nowrap;
+    font-family: var(--font);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .filter-btn:hover { border-color: var(--accent); color: var(--text); }
+  .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .filter-btn.me-btn { border-color: var(--accent3); }
+  .filter-btn.me-btn.active { background: var(--accent3); border-color: var(--accent3); color: #000; }
+
+  .me-zoom-btn {
+    padding: 8px 16px;
+    border-radius: 20px;
+    border: 2px solid var(--accent3);
+    background: transparent;
+    color: var(--accent3);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    transition: all 0.2s;
+    font-family: var(--font);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    width: calc(100% - 40px);
+    margin: 8px 20px;
+  }
+  .me-zoom-btn:hover { background: var(--accent3); color: #000; }
+
+  .refresh-bar {
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .refresh-label {
+    color: var(--text2);
+    white-space: nowrap;
+  }
+  .refresh-select {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: var(--font);
+    outline: none;
+  }
+  .refresh-select:focus { border-color: var(--accent); }
+  .refresh-timer {
+    color: var(--accent);
+    font-weight: 600;
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .refresh-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    margin-left: 8px;
+  }
+  .refresh-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    transform: rotate(180deg);
+  }
+  .refresh-btn:active {
+    transform: rotate(360deg);
+  }
+
+  .labels-toggle {
+    -webkit-appearance: none;
+    appearance: none;
+    padding: 5px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text2);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.2s;
+    font-family: var(--font);
+    margin: 0 20px 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    line-height: 1;
+  }
+  .pill-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text2);
+    transition: all 0.2s;
+    display: inline-block;
+  }
+  .labels-toggle:hover { border-color: var(--accent); color: var(--text); }
+  .labels-toggle.active { background: rgba(77,166,255,0.15); border-color: var(--accent); color: var(--accent); }
+  .labels-toggle.active .pill-dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+  .event-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+  }
+  .event-list::-webkit-scrollbar { width: 4px; }
+  .event-list::-webkit-scrollbar-track { background: transparent; }
+  .event-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .event-card {
+    padding: 12px 14px;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+    position: relative;
+    overflow: hidden;
+  }
+  .event-card:hover { background: var(--surface2); border-color: var(--border); }
+  .event-card.selected { background: var(--surface2); border-color: var(--accent); }
+  .event-card .cat-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    position: absolute;
+    left: 14px; top: 16px;
+  }
+  .event-card .event-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e0e0f0;
+    padding-left: 16px;
+    line-height: 1.3;
+  }
+  .event-card .event-meta {
+    font-size: 11px;
+    color: var(--text2);
+    padding-left: 16px;
+    margin-top: 3px;
+    display: flex;
+    gap: 10px;
+  }
+  .event-card .card-source {
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: lowercase;
+  }
+  .event-card .severity {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
+  }
+  .severity.high { background: rgba(255,100,68,0.2); color: var(--accent2); }
+  .severity.medium { background: rgba(255,170,34,0.2); color: var(--accent3); }
+  .severity.low { background: rgba(68,221,136,0.2); color: var(--accent4); }
+
+  .legend {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--text2);
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* Tooltip */
+  #tooltip {
+    position: fixed;
+    pointer-events: none;
+    z-index: 20;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    max-width: 260px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  #tooltip.visible { opacity: 1; }
+  #tooltip .tt-title { font-weight: 700; color: #fff; margin-bottom: 3px; }
+  #tooltip .tt-detail { color: var(--text2); font-size: 11px; }
+
+  /* Event detail popup */
+  #event-popup {
+    position: fixed;
+    z-index: 25;
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    padding: 16px 20px;
+    max-width: 480px;
+    min-width: 280px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -120%);
+    transition: opacity 0.2s;
+    box-shadow: 0 12px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(77,166,255,0.25);
+  }
+  #event-popup.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  #event-popup-close {
+    position: absolute;
+    right: 8px; top: 6px;
+    background: none;
+    border: none;
+    color: var(--text2);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 2px 6px;
+    line-height: 1;
+    border-radius: 4px;
+    transition: all 0.15s;
+  }
+  #event-popup-close:hover { color: #fff; background: var(--surface2); }
+  #event-popup-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 6px;
+    padding-right: 24px;
+    line-height: 1.3;
+  }
+  #event-popup-meta {
+    font-size: 11px;
+    color: var(--text2);
+    margin-bottom: 8px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  #event-popup-meta .sev-badge {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
+  }
+  #event-popup-meta .cat-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+  #event-popup-desc {
+    font-size: 12px;
+    color: #b0b8c8;
+    line-height: 1.5;
+  }
+  #event-popup-desc .popup-summary {
+    margin: 0 0 8px 0;
+  }
+  #event-popup-desc .popup-casualties {
+    color: #ff7a5c;
+    font-weight: 600;
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+  #event-popup-desc .popup-actors {
+    color: var(--text2);
+    font-size: 11px;
+    margin-bottom: 8px;
+  }
+  #event-popup-desc .popup-link {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 6px 10px;
+    background: rgba(77,166,255,0.15);
+    border: 1px solid rgba(77,166,255,0.4);
+    border-radius: 6px;
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.15s;
+  }
+  #event-popup-desc .popup-link:hover {
+    background: rgba(77,166,255,0.3);
+    color: #fff;
+  }
+
+  /* OSINT source & confidence bar */
+  .popup-osint {
+    display: flex;
+    gap: 10px;
+    padding: 6px 0 8px;
+    font-size: 11px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .osint-confidence {
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .osint-source {
+    color: var(--text2);
+    background: var(--surface2);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .osint-freshness {
+    color: var(--accent);
+    margin-left: auto;
+  }
+
+  /* Action buttons row */
+  .popup-actions {
+    display: flex;
+    gap: 8px;
+    margin: 10px 0 12px;
+    flex-wrap: wrap;
+  }
+  .popup-action-btn {
+    flex: 1;
+    min-width: 80px;
+    text-align: center;
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    color: var(--text);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    transition: all 0.15s;
+    white-space: nowrap;
+    letter-spacing: 0.3px;
+  }
+  .popup-action-btn:hover {
+    border-color: var(--accent);
+    color: #fff;
+    background: rgba(77,166,255,0.15);
+  }
+  .popup-action-btn.primary {
+    background: linear-gradient(135deg, #ff6644, #ff8a5c);
+    color: white;
+    border-color: transparent;
+  }
+  .popup-action-btn.primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(255,102,68,0.4);
+  }
+  .popup-action-btn.video {
+    background: rgba(255,0,0,0.15);
+    border-color: rgba(255,0,0,0.3);
+    color: #ff6666;
+  }
+  .popup-action-btn.video:hover {
+    background: rgba(255,0,0,0.3);
+    border-color: #ff4444;
+    color: #fff;
+  }
+
+  /* Related events section */
+  .popup-related {
+    margin-top: 6px;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+  .related-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text2);
+    margin-bottom: 6px;
+  }
+  .related-loading, .related-none {
+    font-size: 11px;
+    color: var(--text2);
+    font-style: italic;
+  }
+  .related-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+  .related-item:hover {
+    background: var(--surface2);
+  }
+  .related-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .related-title {
+    flex: 1;
+    color: #c8d0e0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .related-sev {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .related-sev.high { background: rgba(255,100,68,0.2); color: var(--accent2); }
+  .related-sev.medium { background: rgba(255,170,34,0.2); color: var(--accent3); }
+  .related-sev.low { background: rgba(68,221,136,0.2); color: var(--accent4); }
+
+  /* Loading overlay */
+  #loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.6s;
+    pointer-events: none;
+  }
+  #loading-overlay.hidden {
+    opacity: 0;
+  }
+  .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 16px;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .loading-text {
+    color: var(--text2);
+    font-size: 13px;
+    letter-spacing: 0.5px;
+  }
+  .loading-error {
+    color: var(--accent2);
+    font-size: 12px;
+    margin-top: 8px;
+    display: none;
+  }
+  .loading-error.visible {
+    display: block;
+  }
+
+  /* Info bar bottom */
+  #info-bar {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 18px;
+    font-size: 11px;
+    color: var(--text2);
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    backdrop-filter: blur(10px);
+  }
+  #info-bar span { color: var(--accent); font-weight: 600; }
+
+  @media (max-width: 768px) {
+    #sidebar { width: 100%; transform: translateX(100%); }
+    #sidebar.open { transform: translateX(0); }
+    #sidebar-toggle { right: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Loading events...</div>
+  <div class="loading-error" id="loading-error">Could not reach event server — showing cached data</div>
+</div>
+<div id="globe-container"></div>
+
+<div id="sidebar">
+  <div class="sidebar-header">
+    <h2>🌍 World Events <span class="version-badge">v2</span></h2>
+    <div class="subtitle"><span id="freshness-label">Live OSINT event tracker</span> <span id="updated-time"></span></div>
+  </div>
+  <div class="search-wrap">
+    <input type="text" id="search" placeholder="Search countries, cities, events...">
+  </div>
+  <div class="filter-bar">
+    <button class="filter-btn active" data-filter="all">All</button>
+    <button class="filter-btn" data-filter="conflict" style="color:var(--accent2)">Conflict</button>
+    <button class="filter-btn" data-filter="diplomatic" style="color:var(--accent)">Diplomatic</button>
+    <button class="filter-btn" data-filter="humanitarian" style="color:var(--accent3)">Humanitarian</button>
+    <button class="filter-btn" data-filter="political" style="color:var(--accent5)">Political</button>
+  </div>
+  <button class="me-zoom-btn" id="me-zoom">📍 Zoom: Middle East</button>
+  <button class="labels-toggle active" id="labels-toggle"><span class="pill-dot"></span>Labels</button>
+  <div class="refresh-bar">
+    <div class="refresh-label">🔄 Auto-refresh</div>
+    <select id="refresh-interval" class="refresh-select">
+      <option value="0">Manual only</option>
+      <option value="15">Every 15 min</option>
+      <option value="30" selected>Every 30 min</option>
+      <option value="60">Every 1 hour</option>
+      <option value="120">Every 2 hours</option>
+    </select>
+    <button class="refresh-btn" id="manual-refresh" title="Refresh now">⟳</button>
+    <div class="refresh-timer" id="refresh-timer">Next: --:--</div>
+  </div>
+  <div class="event-list" id="event-list"></div>
+  <div class="legend">
+    <div class="legend-item"><span class="legend-dot" style="background:var(--accent2)"></span> Conflict</div>
+    <div class="legend-item"><span class="legend-dot" style="background:var(--accent)"></span> Diplomatic</div>
+    <div class="legend-item"><span class="legend-dot" style="background:var(--accent3)"></span> Humanitarian</div>
+    <div class="legend-item"><span class="legend-dot" style="background:var(--accent5)"></span> Political</div>
+    <div class="legend-item"><span class="legend-dot" style="background:var(--accent4)"></span> Geological</div>
+  </div>
+</div>
+<button id="sidebar-toggle" title="Toggle sidebar">☰</button>
+
+<div id="tooltip"><div class="tt-title"></div><div class="tt-detail"></div></div>
+
+<div id="event-popup">
+  <button id="event-popup-close">&times;</button>
+  <div id="event-popup-title"></div>
+  <div id="event-popup-meta"></div>
+  <div id="event-popup-desc"></div>
+</div>
+
+<div id="info-bar">
+  <span id="event-count">0</span> events tracked
+  &nbsp;·&nbsp; 🖱 Drag to rotate &nbsp;·&nbsp; 🔍 Scroll to zoom
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ─────────────────────────────────────
+// API CONFIGURATION
+// ─────────────────────────────────────
+const API_BASE = 'http://localhost:8091';  // FastAPI backend
+let events = [];  // Will be populated from API
+let apiEventsLoaded = false;
+
+// ─────────────────────────────────────
+// FALLBACK STATIC DATA (if API unavailable)
+// ─────────────────────────────────────
+const fallbackEvents = [
+  // MIDDLE EAST — Conflict
+  { id:1, title:'Israel Expands Gaza Control to 60%', lat:31.5, lng:34.47, cat:'conflict', sev:'high', region:'Middle East', desc:'IDF controls ~60% of Gaza Strip. Hamas military chief Izz al-Din Haddad killed. 40+ Israeli attacks in May — highest since Oct 2025 ceasefire.', date:'2026-06-10' },
+  { id:2, title:'Hezbollah-Israel Clashes North of Litani', lat:33.3, lng:35.5, cat:'conflict', sev:'high', region:'Middle East', desc:'260+ Hezbollah drone/rocket attacks in May. Israel pushes north of Litani River. Strikes hit Haifa, Safed, Tiberias. US-brokered ceasefire June 4.', date:'2026-06-09' },
+  { id:3, title:'IRGC Strikes US Targets in Kuwait & Bahrain', lat:29.3, lng:48.0, cat:'conflict', sev:'high', region:'Middle East', desc:'June 3: IRGC missiles hit Ali al-Salem Air Base and US 5th Fleet HQ. Kuwait airport damaged, 1 killed. Iran-US nuclear deal stalled.', date:'2026-06-08' },
+  { id:4, title:'Record West Bank Settler Violence', lat:31.9, lng:35.2, cat:'conflict', sev:'high', region:'Middle East', desc:'380+ violent incidents in May — new record. Attacks across 170 Palestinian communities. EU sanctions settlers May 28.', date:'2026-06-07' },
+  { id:5, title:'Iran Targets Gulf Shipping & UAE Nuclear Plant', lat:25.0, lng:55.0, cat:'conflict', sev:'high', region:'Middle East', desc:'Iran struck Barakah Nuclear Plant and Fujairah petroleum zone. 15 commercial ships targeted, 1 sailor killed. US enforces maritime blockade.', date:'2026-06-06' },
+  { id:6, title:'Houthi Attacks on Red Sea Shipping Resume', lat:15.4, lng:42.7, cat:'conflict', sev:'medium', region:'Middle East', desc:'Houthi forces intensify attacks on Israel-linked vessels. US retaliatory strikes degrade Houthi military capacity.', date:'2026-06-05' },
+  { id:7, title:'Syria: ISIS Resurgence & Sectarian Violence', lat:34.8, lng:38.9, cat:'conflict', sev:'medium', region:'Middle East', desc:'Growing sectarian violence. Israeli & Turkish interventions weaken central government. ISIS regroups in eastern Syria.', date:'2026-06-04' },
+  { id:8, title:'Netanyahu Pushes for 70% Gaza Control', lat:32.08, lng:34.78, cat:'political', sev:'high', region:'Middle East', desc:'PM Netanyahu announces goal to seize 70% of Gaza. Rubio says plan contradicts Trump position. Israeli legislative elections loom.', date:'2026-06-03' },
+
+  // GLOBAL — Conflict
+  { id:9, title:'Russia-Ukraine War Intensifies', lat:50.4, lng:30.5, cat:'conflict', sev:'high', region:'Europe', desc:'Both sides escalate attacks on critical infrastructure and population centers. Tier I concern — high likelihood, high impact.', date:'2026-06-10' },
+  { id:10, title:'Sudan Civil War: Mass Atrocities Feared', lat:15.5, lng:32.5, cat:'humanitarian', sev:'high', region:'Africa', desc:'Civil war escalates. Mass atrocities and civilian displacement. Highest likelihood conflict in 2026 per CFR survey. Spillover to neighbors.', date:'2026-06-09' },
+  { id:11, title:'North Korea Prepares Nuclear Test', lat:39.0, lng:125.8, cat:'conflict', sev:'high', region:'Asia-Pacific', desc:'Resumption of nuclear weapons tests heightens Korean Peninsula tensions. Potential armed confrontation involving US and regional powers.', date:'2026-06-08' },
+  { id:12, title:'Taiwan Strait Crisis Deepens', lat:23.7, lng:121.0, cat:'conflict', sev:'high', region:'Asia-Pacific', desc:'China intensifies military/economic pressure on Taiwan. Tier I concern. Moderate likelihood, high impact — could draw in US forces.', date:'2026-06-07' },
+  { id:13, title:'Venezuela: US Military Strikes Possible', lat:10.5, lng:-66.9, cat:'conflict', sev:'high', region:'Americas', desc:'US operations targeting criminal groups may escalate to direct strikes. New addition to CFR Tier I for 2026. High likelihood.', date:'2026-06-06' },
+  { id:14, title:'Russia-NATO Clash Risk Grows', lat:54.5, lng:25.3, cat:'conflict', sev:'high', region:'Europe', desc:'Russian provocations toward European states increase. Armed clashes with NATO member possible. Tier I — moderate likelihood, high impact.', date:'2026-06-05' },
+  { id:15, title:'South China Sea: China-Philippines Tensions', lat:10.0, lng:115.0, cat:'conflict', sev:'medium', region:'Asia-Pacific', desc:'Aggressive Chinese actions toward Philippines. Armed confrontation involving US allies possible. Dropped to Tier II for 2026.', date:'2026-06-04' },
+  { id:16, title:'India-Pakistan: Kashmir Tensions Renewed', lat:34.0, lng:74.5, cat:'conflict', sev:'medium', region:'Asia-Pacific', desc:'Terrorist activity and repression in Indian-administered Kashmir. Armed conflict between nuclear powers possible. Tier II priority.', date:'2026-06-03' },
+  { id:17, title:'Haiti: Gang Violence & State Collapse', lat:18.5, lng:-72.3, cat:'conflict', sev:'medium', region:'Americas', desc:'Armed groups vs security forces escalate. Political dysfunction and failed international stabilization. High likelihood, low US impact.', date:'2026-06-02' },
+  { id:18, title:'Sahel Insurgencies Spread', lat:16.0, lng:0.0, cat:'conflict', sev:'medium', region:'Africa', desc:'Growing insurgencies across Mali, Burkina Faso, Niger. Regional instability worsens. Russia expands influence in Sahel.', date:'2026-06-01' },
+  { id:19, title:'Myanmar: State Collapse Accelerates', lat:21.9, lng:96.0, cat:'humanitarian', sev:'medium', region:'Asia-Pacific', desc:'Military junta vs armed groups conflict intensifies. Civilian displacement surges. Regional tensions with neighbors grow.', date:'2026-05-30' },
+  { id:20, title:'DRC-Rwanda Border Conflict', lat:-1.7, lng:29.2, cat:'conflict', sev:'medium', region:'Africa', desc:'Ethnic and political conflict over territory and resources. Rwanda-backed M23 militias active. Tier III — moderate likelihood.', date:'2026-05-29' },
+
+  // DIPLOMATIC / POLITICAL
+  { id:21, title:'FIFA World Cup 2026 Begins June 11', lat:40.7, lng:-74.0, cat:'diplomatic', sev:'low', region:'Americas', desc:'World Cup kicks off across US, Canada, Mexico — 16 cities, 48 teams. First 48-team tournament. Global attention shifts to North America.', date:'2026-06-11' },
+  { id:22, title:'EU Sanctions Israeli Settlers', lat:50.8, lng:4.4, cat:'diplomatic', sev:'medium', region:'Europe', desc:'EU imposes sanctions on extremist settlers and organizations enabling outpost construction. Brings international focus back to West Bank.', date:'2026-06-06' },
+  { id:23, title:'US Midterm Elections Loom', lat:38.9, lng:-77.0, cat:'political', sev:'medium', region:'Americas', desc:'November 2026 midterms shape US foreign policy calculus. Iran counts on US electoral distraction to reduce risk of wider war.', date:'2026-06-05' },
+  { id:24, title:'US Political Violence Risk Returns to Tier I', lat:39.8, lng:-98.5, cat:'political', sev:'high', region:'Americas', desc:'Growing political violence and popular unrest rated high-likelihood, high-impact in CFR survey. Heightened antagonism and domestic security deployments.', date:'2026-06-04' },
+  { id:25, title:'AI-Enabled Cyberattack Threat on US Infrastructure', lat:38.9, lng:-77.0, cat:'conflict', sev:'high', region:'Americas', desc:'State/non-state actor cyberattack on US critical infrastructure rated moderate likelihood, high impact. New dimension of great power competition.', date:'2026-06-03' },
+  { id:26, title:'South Sudan Election Delays Spark Violence', lat:4.8, lng:31.6, cat:'political', sev:'medium', region:'Africa', desc:'Further election delays trigger renewed ethnic and political faction fighting. Central government destabilization risk. Tier II.', date:'2026-05-28' },
+  { id:27, title:'Somalia: US Security Withdrawal Concerns', lat:2.0, lng:45.3, cat:'conflict', sev:'medium', region:'Africa', desc:'Potential US security assistance withdrawal. Al-Shabaab and ISIS may expand territorial control. Tier II — moderate likelihood.', date:'2026-05-27' },
+  { id:28, title:'Armenia-Azerbaijan: Renewed Hostilities Risk', lat:40.0, lng:45.0, cat:'conflict', sev:'medium', region:'Europe', desc:'Unresolved territorial claims risk renewed armed conflict. Could draw in Turkey and other regional powers. Noted concern in CFR survey.', date:'2026-05-26' },
+  { id:29, title:'Ecuador: Criminal Violence & Political Repression', lat:-0.2, lng:-78.5, cat:'political', sev:'low', region:'Americas', desc:'Rising criminal violence and political repression increase civilian casualties. New addition to CFR contingencies for 2026.', date:'2026-05-25' },
+  { id:30, title:'Cameroon: Insurgencies Destabilize Government', lat:3.8, lng:11.5, cat:'conflict', sev:'low', region:'Africa', desc:'Northern and western insurgencies strengthen. Central government at risk of wider civil conflict. New CFR contingency for 2026.', date:'2026-05-24' },
+];
+
+// ─────────────────────────────────────
+// API FETCH LOGIC
+// ─────────────────────────────────────
+async function loadEventsFromAPI() {
+  const overlay = document.getElementById('loading-overlay');
+  const errorEl = document.getElementById('loading-error');
+  try {
+    console.log('[Globe] Fetching events from API:', `${API_BASE}/events?limit=500&since_hours=168`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const resp = await fetch(`${API_BASE}/events?limit=500&since_hours=168`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    console.log('[Globe] API response status:', resp.status);
+    if (!resp.ok) throw new Error(`API ${resp.status}`);
+    const data = await resp.json();
+    console.log('[Globe] API returned', data.length, 'events');
+    events = data.map((e, i) => ({
+      id: e.id,
+      title: e.title,
+      lat: e.lat,
+      lng: e.lng,
+      cat: e.category,
+      sev: e.severity >= 70 ? 'high' : e.severity >= 40 ? 'medium' : 'low',
+      region: e.region,
+      desc: e.summary || e.title,
+      date: e.published_at?.split('T')[0] || '2026-01-01',
+      severity: e.severity,
+      confidence: e.confidence,
+      actors: e.actors,
+      casualties: e.casualties,
+      tags: e.tags,
+      url: e.url,
+      country_code: e.country_code
+    }));
+    apiEventsLoaded = true;
+    console.log(`[Globe] Loaded ${events.length} events from API`);
+    errorEl.classList.remove('visible');
+  } catch (err) {
+    console.warn('[Globe] API unavailable, using fallback data:', err.message);
+    events = fallbackEvents.map(e => ({ ...e, severity: e.sev === 'high' ? 80 : e.sev === 'medium' ? 50 : 20 }));
+    errorEl.classList.add('visible');
+    console.log('[Globe] Fallback loaded', events.length, 'events');
+  }
+  // Initialize UI after events loaded
+  initializeEventMarkers();
+  renderEventList();
+  updateInfoBar();
+  document.getElementById('updated-time').textContent = `• ${new Date().toLocaleTimeString()}`;
+  // Hide loading overlay with fade
+  setTimeout(() => overlay.classList.add('hidden'), 200);
+  setTimeout(() => overlay.style.display = 'none', 800);
+}
+
+// ─────────────────────────────────────
+// MAJOR CITIES (~100)
+// ─────────────────────────────────────
+const cities = [
+  { name:'New York', lat:40.7, lng:-74.0, pop:'8.8M' },
+  { name:'Los Angeles', lat:34.0, lng:-118.2, pop:'3.9M' },
+  { name:'Chicago', lat:41.9, lng:-87.6, pop:'2.7M' },
+  { name:'Washington DC', lat:38.9, lng:-77.0, pop:'0.7M' },
+  { name:'Mexico City', lat:19.4, lng:-99.1, pop:'9.2M' },
+  { name:'São Paulo', lat:-23.5, lng:-46.6, pop:'12.3M' },
+  { name:'Buenos Aires', lat:-34.6, lng:-58.4, pop:'3.1M' },
+  { name:'London', lat:51.5, lng:-0.1, pop:'9.0M' },
+  { name:'Paris', lat:48.9, lng:2.3, pop:'2.2M' },
+  { name:'Berlin', lat:52.5, lng:13.4, pop:'3.7M' },
+  { name:'Moscow', lat:55.8, lng:37.6, pop:'12.5M' },
+  { name:'Kyiv', lat:50.4, lng:30.5, pop:'2.9M' },
+  { name:'Rome', lat:41.9, lng:12.5, pop:'2.9M' },
+  { name:'Madrid', lat:40.4, lng:-3.7, pop:'3.3M' },
+  { name:'Brussels', lat:50.8, lng:4.4, pop:'1.2M' },
+  { name:'Istanbul', lat:41.0, lng:29.0, pop:'15.5M' },
+  { name:'Cairo', lat:30.0, lng:31.2, pop:'10.2M' },
+  { name:'Tehran', lat:35.7, lng:51.4, pop:'9.4M' },
+  { name:'Baghdad', lat:33.3, lng:44.4, pop:'7.1M' },
+  { name:'Riyadh', lat:24.7, lng:46.7, pop:'7.7M' },
+  { name:'Dubai', lat:25.2, lng:55.3, pop:'3.5M' },
+  { name:'Jerusalem', lat:31.8, lng:35.2, pop:'0.9M' },
+  { name:'Tel Aviv', lat:32.1, lng:34.8, pop:'0.5M' },
+  { name:'Damascus', lat:33.5, lng:36.3, pop:'2.1M' },
+  { name:'Beirut', lat:33.9, lng:35.5, pop:'2.4M' },
+  { name:'Amman', lat:31.9, lng:35.9, pop:'4.0M' },
+  { name:'Kuwait City', lat:29.4, lng:48.0, pop:'2.4M' },
+  { name:'Manama', lat:26.2, lng:50.6, pop:'0.7M' },
+  { name:'Doha', lat:25.3, lng:51.5, pop:'1.2M' },
+  { name:'Abu Dhabi', lat:24.5, lng:54.4, pop:'1.5M' },
+  { name:'Sanaa', lat:15.4, lng:44.2, pop:'3.1M' },
+  { name:'Muscat', lat:23.6, lng:58.6, pop:'1.5M' },
+  { name:'Beijing', lat:39.9, lng:116.4, pop:'21.5M' },
+  { name:'Shanghai', lat:31.2, lng:121.5, pop:'24.9M' },
+  { name:'Tokyo', lat:35.7, lng:139.7, pop:'14.0M' },
+  { name:'Seoul', lat:37.6, lng:127.0, pop:'9.8M' },
+  { name:'Pyongyang', lat:39.0, lng:125.8, pop:'3.1M' },
+  { name:'Taipei', lat:25.0, lng:121.5, pop:'2.7M' },
+  { name:'Hong Kong', lat:22.3, lng:114.2, pop:'7.5M' },
+  { name:'Singapore', lat:1.3, lng:103.8, pop:'5.7M' },
+  { name:'Jakarta', lat:-6.2, lng:106.8, pop:'10.8M' },
+  { name:'Manila', lat:14.6, lng:121.0, pop:'1.8M' },
+  { name:'Bangkok', lat:13.8, lng:100.5, pop:'10.5M' },
+  { name:'Hanoi', lat:21.0, lng:105.8, pop:'8.2M' },
+  { name:'New Delhi', lat:28.6, lng:77.2, pop:'32.9M' },
+  { name:'Mumbai', lat:19.1, lng:72.9, pop:'21.0M' },
+  { name:'Islamabad', lat:33.7, lng:73.0, pop:'1.2M' },
+  { name:'Kabul', lat:34.5, lng:69.2, pop:'4.6M' },
+  { name:'Sydney', lat:-33.9, lng:151.2, pop:'5.3M' },
+  { name:'Auckland', lat:-36.8, lng:174.8, pop:'1.7M' },
+  { name:'Cape Town', lat:-33.9, lng:18.4, pop:'4.7M' },
+  { name:'Johannesburg', lat:-26.2, lng:28.0, pop:'6.2M' },
+  { name:'Lagos', lat:6.5, lng:3.4, pop:'15.4M' },
+  { name:'Nairobi', lat:-1.3, lng:36.8, pop:'5.1M' },
+  { name:'Addis Ababa', lat:9.0, lng:38.7, pop:'5.2M' },
+  { name:'Khartoum', lat:15.5, lng:32.5, pop:'6.2M' },
+  { name:'Juba', lat:4.8, lng:31.6, pop:'0.5M' },
+  { name:'Kinshasa', lat:-4.3, lng:15.3, pop:'15.6M' },
+  { name:'Toronto', lat:43.7, lng:-79.4, pop:'2.9M' },
+  { name:'Caracas', lat:10.5, lng:-66.9, pop:'2.9M' },
+  { name:'Bogotá', lat:4.7, lng:-74.1, pop:'11.2M' },
+  { name:'Lima', lat:-12.0, lng:-77.0, pop:'11.0M' },
+  { name:'Quito', lat:-0.2, lng:-78.5, pop:'2.0M' },
+  { name:'Port-au-Prince', lat:18.5, lng:-72.3, pop:'2.8M' },
+];
+
+// ─────────────────────────────────────
+// FEATURE MARKERS (removed - clutter)
+
+// ─────────────────────────────────────
+// COUNTRY CENTER COORDINATES (~50 major)
+// ─────────────────────────────────────
+const countries = [
+  { name:'United States', lat:39.8, lng:-98.5, major:true },
+  { name:'China', lat:35.0, lng:103.0, major:true },
+  { name:'Russia', lat:61.5, lng:95.0, major:true },
+  { name:'India', lat:21.0, lng:78.0, major:true },
+  { name:'Brazil', lat:-10.0, lng:-55.0, major:true },
+  { name:'European Union', lat:50.0, lng:10.0, major:true },
+  
+  // Secondary countries
+  { name:'Canada', lat:56.1, lng:-96.0, major:false },
+  { name:'Australia', lat:-25.3, lng:133.8, major:false },
+  { name:'Japan', lat:36.2, lng:138.3, major:false },
+  { name:'Germany', lat:51.2, lng:10.4, major:false },
+  { name:'France', lat:46.6, lng:2.2, major:false },
+  { name:'United Kingdom', lat:55.4, lng:-3.4, major:false },
+  { name:'Indonesia', lat:-2.5, lng:118.0, major:false },
+  { name:'Mexico', lat:23.6, lng:-102.5, major:false },
+  { name:'Turkey', lat:39.0, lng:35.0, major:false },
+  { name:'Saudi Arabia', lat:23.9, lng:45.1, major:false },
+  { name:'Iran', lat:32.4, lng:53.7, major:false },
+  { name:'Egypt', lat:26.8, lng:30.8, major:false },
+  { name:'Nigeria', lat:9.1, lng:8.7, major:false },
+  { name:'South Africa', lat:-30.6, lng:23.0, major:false },
+  { name:'Pakistan', lat:30.4, lng:69.3, major:false },
+  { name:'Bangladesh', lat:23.7, lng:90.4, major:false },
+  { name:'Argentina', lat:-38.4, lng:-63.6, major:false },
+  { name:'South Korea', lat:36.5, lng:127.8, major:false },
+  { name:'Vietnam', lat:16.2, lng:107.8, major:false },
+  
+  // Minor countries (only show at high zoom)
+  { name:'Colombia', lat:4.6, lng:-74.1, major:false, minor:true },
+  { name:'Venezuela', lat:8.0, lng:-66.0, major:false, minor:true },
+  { name:'Peru', lat:-9.2, lng:-75.0, major:false, minor:true },
+  { name:'Chile', lat:-35.7, lng:-71.5, major:false, minor:true },
+  { name:'Italy', lat:41.9, lng:12.6, major:false, minor:true },
+  { name:'Spain', lat:40.4, lng:-3.7, major:false, minor:true },
+  { name:'Poland', lat:52.0, lng:19.0, major:false, minor:true },
+  { name:'Ukraine', lat:48.4, lng:31.2, major:false, minor:true },
+  { name:'Ethiopia', lat:9.1, lng:40.5, major:false, minor:true },
+  { name:'Sudan', lat:15.0, lng:30.0, major:false, minor:true },
+  { name:'DR Congo', lat:-2.9, lng:23.7, major:false, minor:true },
+  { name:'Kenya', lat:-0.0, lng:38.0, major:false, minor:true },
+  { name:'North Korea', lat:40.3, lng:127.4, major:false, minor:true },
+  { name:'Philippines', lat:12.9, lng:121.8, major:false, minor:true },
+  { name:'Thailand', lat:15.0, lng:101.0, major:false, minor:true },
+  { name:'Myanmar', lat:21.9, lng:96.0, major:false, minor:true },
+  { name:'Iraq', lat:33.2, lng:43.7, major:false, minor:true },
+  { name:'Yemen', lat:15.6, lng:47.5, major:false, minor:true },
+  { name:'Syria', lat:35.0, lng:38.5, major:false, minor:true },
+  { name:'Jordan', lat:31.0, lng:36.5, major:false, minor:true },
+  { name:'Israel', lat:31.4, lng:35.0, major:false, minor:true },
+  { name:'Lebanon', lat:33.9, lng:35.9, major:false, minor:true },
+  { name:'UAE', lat:24.0, lng:54.0, major:false, minor:true },
+  { name:'Afghanistan', lat:33.9, lng:67.0, major:false, minor:true },
+  { name:'Taiwan', lat:23.7, lng:121.0, major:false, minor:true },
+];
+
+// ─────────────────────────────────────
+// THREE.JS SETUP
+// ─────────────────────────────────────
+const container = document.getElementById('globe-container');
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(42, container.clientWidth / container.clientHeight, 0.1, 1000);
+camera.position.set(0, 0.6, 3.8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+container.appendChild(renderer.domElement);
+
+// ─────────────────────────────────────
+// ORBIT CONTROLS
+// ─────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.8;
+controls.maxDistance = 8;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.25;
+controls.target.set(0, 0, 0);
+controls.update();
+
+// Pause auto-rotate on user interaction, resume after delay
+let lastUserInteraction = 0;
+let autoRotateManuallyStopped = false;
+const AUTO_ROTATE_RESUME_DELAY = 3.0;
+function stopAutoRotate() {
+  controls.autoRotate = false;
+  autoRotateManuallyStopped = true;
+}
+renderer.domElement.addEventListener('pointerdown', stopAutoRotate);
+renderer.domElement.addEventListener('wheel', stopAutoRotate);
+
+const GLOBE_RADIUS = 1.5;
+
+// ─────────────────────────────────────
+// SPRITE-BASED LABELS (zoom-aware)
+// ─────────────────────────────────────
+const countryLabelGroup = new THREE.Group();
+const cityLabelGroup = new THREE.Group();
+scene.add(countryLabelGroup);
+scene.add(cityLabelGroup);
+let labelsVisible = true;
+
+function makeLabelSprite(text, fontSize, color, bgColor) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512;
+  canvas.height = 128;
+  ctx.font = `${fontSize}px "Segoe UI", system-ui, -apple-system, sans-serif`;
+  const metrics = ctx.measureText(text);
+  const tw = metrics.width;
+  const th = fontSize * 1.4;
+  const padX = fontSize * 0.6;
+  const padY = fontSize * 0.3;
+  canvas.width = Math.ceil(tw + padX * 2);
+  canvas.height = Math.ceil(th + padY * 2);
+  ctx.font = `${fontSize}px "Segoe UI", system-ui, -apple-system, sans-serif`;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  if (bgColor) {
+    ctx.fillStyle = bgColor;
+    const bw = tw + padX;
+    const bh = th + padY * 0.5;
+    ctx.beginPath();
+    ctx.roundRect(canvas.width/2 - bw/2, canvas.height/2 - bh/2, bw, bh, 4);
+    ctx.fill();
+  }
+  ctx.fillStyle = color;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: true, depthWrite: false });
+  const sprite = new THREE.Sprite(material);
+  const aspect = canvas.width / canvas.height;
+  const height = 0.08;
+  sprite.scale.set(height * aspect, height, 1);
+  return sprite;
+}
+
+function rebuildLabels() {
+  // Clear existing labels
+  while (countryLabelGroup.children.length > 0) {
+    const child = countryLabelGroup.children[0];
+    countryLabelGroup.remove(child);
+    if (child.material.map) child.material.map.dispose();
+    child.material.dispose();
+  }
+
+  const dist = camera.position.length();
+  const zoomLevel = dist / GLOBE_RADIUS;
+
+  // Determine which countries to show based on zoom
+  let countriesToShow = countries.filter(c => c.major);
+  if (zoomLevel < 2.0) {
+    countriesToShow = countries.filter(c => c.major || !c.minor);
+  }
+  if (zoomLevel < 1.6) {
+    countriesToShow = countries;
+  }
+
+  countriesToShow.forEach(c => {
+    const isMajor = c.major === true;
+    const isMinor = c.minor === true;
+
+    let fontSize, color, bgColor, baseHeight;
+    if (isMajor) {
+      fontSize = 58; color = '#ffffff'; bgColor = 'rgba(8, 14, 32, 0.75)'; baseHeight = 0.095;
+    } else if (isMinor) {
+      fontSize = 38; color = '#9aa8c0'; bgColor = 'rgba(10, 10, 20, 0.55)'; baseHeight = 0.055;
+    } else {
+      fontSize = 48; color = '#d0e0f8'; bgColor = 'rgba(10, 15, 28, 0.65)'; baseHeight = 0.072;
+    }
+
+    const sprite = makeLabelSprite(c.name.toUpperCase(), fontSize, color, bgColor);
+    const pos = latLngToVec3(c.lat, c.lng, GLOBE_RADIUS * 1.07);
+    sprite.position.copy(pos);
+
+    // Pre-compute current label zoom so the initial scale matches the animation loop
+    const lz = Math.max(0.25, Math.min(3.5, (camera.position.length() / GLOBE_RADIUS) / 1.7));
+    sprite.userData = { type: 'country', name: c.name, major: isMajor, minor: isMinor, baseHeight };
+
+    const aspect = sprite.scale.x / sprite.scale.y;
+    sprite.scale.set(baseHeight * aspect * lz, baseHeight * lz, 1);
+    sprite.material.opacity = 1.0;
+
+    countryLabelGroup.add(sprite);
+  });
+}
+
+// Initial label build
+rebuildLabels();
+
+// City labels (muted, smaller)
+cities.forEach(c => {
+  const sprite = makeLabelSprite(c.name, 40, '#a0b0c8', null);
+  const pos = latLngToVec3(c.lat, c.lng, GLOBE_RADIUS * 1.04);
+  sprite.position.copy(pos);
+  sprite.userData = { type:'city', name:c.name, baseHeight: 0.055 };
+  cityLabelGroup.add(sprite);
+});
+
+// ─────────────────────────────────────
+// STARS
+// ─────────────────────────────────────
+const starsGeom = new THREE.BufferGeometry();
+const starsCount = 2000;
+const starsPos = new Float32Array(starsCount * 3);
+for (let i = 0; i < starsCount; i++) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  const r = 50 + Math.random() * 30;
+  starsPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+  starsPos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+  starsPos[i * 3 + 2] = r * Math.cos(phi);
+}
+starsGeom.setAttribute('position', new THREE.BufferAttribute(starsPos, 3));
+const starsMat = new THREE.PointsMaterial({ color: 0x8899bb, size: 0.06, transparent: true, opacity: 0.8 });
+const stars = new THREE.Points(starsGeom, starsMat);
+scene.add(stars);
+
+// ─────────────────────────────────────
+// SUN POSITION CALCULATION (real-time)
+// ─────────────────────────────────────
+function getSunDirection() {
+  const now = new Date();
+  // Use precise UTC time
+  const utcHours = now.getUTCHours() + now.getUTCMinutes() / 60 + now.getUTCSeconds() / 3600;
+  const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+  
+  // More accurate solar declination (June solstice ~ +23.44°)
+  const decl = 23.44 * Math.sin(2 * Math.PI * (dayOfYear - 81) / 365) * Math.PI / 180;
+  
+  // Hour angle: 15° per hour, 0 at UTC noon, positive west
+  // +180° shift to match the globe texture orientation (lng + 180 in latLngToVec3)
+  const ha = (utcHours - 12) * 15 * Math.PI / 180 + Math.PI;
+  
+  // Sun position vector (from Earth center toward sun)
+  // Standard geographic convention: X toward 0° lon, Y toward north pole, Z toward 90°E
+  // Three.js: Y up, so we map lat/lon accordingly
+  const x = Math.cos(decl) * Math.cos(ha);
+  const y = Math.sin(decl);
+  const z = Math.cos(decl) * Math.sin(ha);
+  
+  // We want the direction the sun is shining FROM (toward the globe)
+  return new THREE.Vector3(-x, -y, -z).normalize();
+}
+
+// ─────────────────────────────────────
+// EARTH GLOBE WITH DAY/NIGHT SHADER
+// ─────────────────────────────────────
+const globeGeom = new THREE.SphereGeometry(GLOBE_RADIUS, 128, 64);
+const textureLoader = new THREE.TextureLoader();
+textureLoader.crossOrigin = 'anonymous';
+
+// Default 1x1 textures so GLSL texture2D always has something valid to sample.
+function makeSolidTexture(r, g, b) {
+  const c = document.createElement('canvas');
+  c.width = 1; c.height = 1;
+  const cx = c.getContext('2d');
+  cx.fillStyle = `rgb(${r},${g},${b})`;
+  cx.fillRect(0, 0, 1, 1);
+  const t = new THREE.CanvasTexture(c);
+  t.needsUpdate = true;
+  return t;
+}
+
+// Sensible fallback colors (so the globe is opaque & earth-like even before textures load)
+const dayTexture = makeSolidTexture(40, 75, 120);    // ocean blue
+const nightTexture = makeSolidTexture(8, 12, 28);     // dark night
+let dayLoaded = false;
+
+// Load real earth textures (multiple CDN fallbacks)
+const DAY_URLS = [
+  'https://unpkg.com/three-globe@2.45.2/example/img/earth-blue-marble.jpg',
+  'https://raw.githubusercontent.com/turban/webgl-earth/master/images/2_no_clouds_4k.jpg',
+];
+const NIGHT_URLS = [
+  'https://unpkg.com/three-globe@2.45.2/example/img/earth-night.jpg',
+  'https://raw.githubusercontent.com/turban/webgl-earth/master/images/5_night_4k.jpg',
+];
+
+function loadWithFallback(urls, onLoad) {
+  let idx = 0;
+  const tryNext = () => {
+    if (idx >= urls.length) { console.warn('[Globe] all texture URLs failed for', urls[0]); return; }
+    const url = urls[idx++];
+    textureLoader.load(
+      url,
+      (tex) => { tex.colorSpace = THREE.SRGBColorSpace; onLoad(tex); },
+      undefined,
+      () => { console.warn('[Globe] texture failed, trying fallback:', url); tryNext(); }
+    );
+  };
+  tryNext();
+}
+
+loadWithFallback(DAY_URLS, (tex) => {
+  globeMat.uniforms.uDayTexture.value = tex;
+  dayLoaded = true;
+  console.log('[Globe] Day texture loaded');
+});
+loadWithFallback(NIGHT_URLS, (tex) => {
+  globeMat.uniforms.uNightTexture.value = tex;
+  console.log('[Globe] Night texture loaded');
+});
+
+// Day/night shader — uses real lighting + terminator, NO null comparisons (invalid GLSL)
+const globeMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uDayTexture:   { value: dayTexture },
+    uNightTexture: { value: nightTexture },
+    uSunDirection: { value: new THREE.Vector3(1, 0, 0) },
+    uCameraPos:    { value: new THREE.Vector3(0, 0, 3.8) },
+  },
+  vertexShader: /* glsl */`
+    varying vec3 vNormal;
+    varying vec2 vUv;
+    varying vec3 vWorldPos;
+    void main() {
+      vNormal = normalize(mat3(modelMatrix) * normal);
+      vUv = uv;
+      vec4 worldPos = modelMatrix * vec4(position, 1.0);
+      vWorldPos = worldPos.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform sampler2D uDayTexture;
+    uniform sampler2D uNightTexture;
+    uniform vec3 uSunDirection;
+    uniform vec3 uCameraPos;
+    varying vec3 vNormal;
+    varying vec2 vUv;
+    varying vec3 vWorldPos;
+
+    void main() {
+      vec3 sunDir = normalize(uSunDirection);
+      vec3 N = normalize(vNormal);
+      float NdotL = dot(N, sunDir);
+
+      // EXTREMELY OBVIOUS day/night - almost black night, bright day
+      vec3 dayColor = texture2D(uDayTexture, vUv).rgb * 1.6;
+      vec3 nightColor = texture2D(uNightTexture, vUv).rgb * 0.4;   // very dark night side
+
+      float terminator = smoothstep(-0.01, 0.08, NdotL);
+      vec3 color = mix(nightColor, dayColor, terminator);
+
+      // Very strong blue rim on day side
+      vec3 viewDir = normalize(uCameraPos - vWorldPos);
+      float rim = pow(1.0 - max(dot(N, viewDir), 0.0), 1.4);
+      color += vec3(0.3, 0.6, 1.0) * rim * 1.1 * smoothstep(0.0, 0.35, NdotL);
+
+      gl_FragColor = vec4(color, 1.0);
+    }
+  `
+});
+
+const globe = new THREE.Mesh(globeGeom, globeMat);
+scene.add(globe);
+
+// ─────────────────────────────────────
+// ATMOSPHERE GLOW (responds to sun)
+// ─────────────────────────────────────
+const atmosGeom = new THREE.SphereGeometry(GLOBE_RADIUS * 1.025, 128, 64);
+const atmosMat = new THREE.ShaderMaterial({
+  vertexShader: /* glsl */`
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    void main() {
+      vec4 worldPos = modelMatrix * vec4(position, 1.0);
+      vNormal = normalize(mat3(modelMatrix) * normal);
+      vPosition = worldPos.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform vec3 uSunDirection;
+    uniform vec3 uCameraPos;
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    void main() {
+      vec3 viewDir = normalize(uCameraPos - vPosition);
+      vec3 sunDir = normalize(uSunDirection);
+      float sunDot = dot(vNormal, sunDir);
+      float viewDot = dot(vNormal, viewDir);
+      
+      // Day side: thin blue limb
+      float dayRim = pow(1.0 - max(viewDot, 0.0), 4.0);
+      float dayIntensity = smoothstep(-0.1, 0.1, sunDot) * dayRim * 0.25;
+      
+      // Night side: subtle dark limb
+      float nightRim = pow(1.0 - max(viewDot, 0.0), 5.0);
+      float nightIntensity = (1.0 - smoothstep(-0.1, 0.1, sunDot)) * nightRim * 0.08;
+      
+      float intensity = dayIntensity + nightIntensity;
+      vec3 color = mix(vec3(0.1, 0.2, 0.4), vec3(0.3, 0.6, 1.0), smoothstep(-0.1, 0.1, sunDot));
+      
+      gl_FragColor = vec4(color, intensity);
+    }
+  `,
+  uniforms: {
+    uSunDirection: { value: new THREE.Vector3(1, 0, 0) },
+    uCameraPos: { value: new THREE.Vector3(0, 0, 3.8) }
+  },
+  transparent: true,
+  depthWrite: false,
+  side: THREE.BackSide
+});
+const atmosphere = new THREE.Mesh(atmosGeom, atmosMat);
+scene.add(atmosphere);
+
+// ─────────────────────────────────────
+// LIGHTING (dynamic sun position)
+// ─────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x223344, 1.5);
+scene.add(ambientLight);
+
+const sunLight = new THREE.DirectionalLight(0xffeedd, 4.0);
+sunLight.position.set(5, 1, 3);
+scene.add(sunLight);
+
+const fillLight = new THREE.DirectionalLight(0x4466aa, 0.6);
+fillLight.position.set(-3, -1, -2);
+scene.add(fillLight);
+
+// ─────────────────────────────────────
+// PROFESSIONAL EVENT MARKERS
+// ─────────────────────────────────────
+function createEventMarker(event, color) {
+  const group = new THREE.Group();
+  const severity = event.severity || (event.sev === 'high' ? 80 : event.sev === 'medium' ? 50 : 20);
+  const isHigh = severity >= 70;
+  const isMed = severity >= 40;
+  
+  // Base pulse speed by severity
+  const baseSpeed = isHigh ? 2.8 : isMed ? 2.0 : 1.4;
+  const pulsePhase = Math.random() * Math.PI * 2;
+  
+  // 1. Outer glow ring (expanding/contracting)
+  const outerRingGeom = new THREE.RingGeometry(0.025, 0.035, 32);
+  const outerRingMat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+  const outerRing = new THREE.Mesh(outerRingGeom, outerRingMat);
+  group.add(outerRing);
+  
+  // 2. Middle pulse ring
+  const midRingGeom = new THREE.RingGeometry(0.015, 0.022, 32);
+  const midRingMat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.7,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+  const midRing = new THREE.Mesh(midRingGeom, midRingMat);
+  group.add(midRing);
+  
+  // 3. Core ring (stable, bright)
+  const coreRingGeom = new THREE.RingGeometry(0.008, 0.014, 32);
+  const coreRingMat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 1.0,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+  const coreRing = new THREE.Mesh(coreRingGeom, coreRingMat);
+  group.add(coreRing);
+  
+  // 4. Central glow sprite (billboard facing camera)
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = 128;
+  glowCanvas.height = 128;
+  const gctx = glowCanvas.getContext('2d');
+  const grad = gctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, `rgba(${Math.round((color>>16)&255)},${Math.round((color>>8)&255)},${Math.round(color&255)},1)`);
+  grad.addColorStop(0.5, `rgba(${Math.round((color>>16)&255)},${Math.round((color>>8)&255)},${Math.round(color&255)},0.3)`);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  gctx.fillStyle = grad;
+  gctx.fillRect(0, 0, 128, 128);
+  const glowTex = new THREE.CanvasTexture(glowCanvas);
+  const glowMat = new THREE.SpriteMaterial({ 
+    map: glowTex, 
+    transparent: true, 
+    opacity: 0.9,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const glowSprite = new THREE.Sprite(glowMat);
+  glowSprite.scale.set(0.06, 0.06, 1);
+  group.add(glowSprite);
+  
+  // 5. Particle ring (for high severity)
+  let particles = null;
+  if (isHigh) {
+    const particleCount = 12;
+    const particleGeom = new THREE.BufferGeometry();
+    const particlePos = new Float32Array(particleCount * 3);
+    const particlePhase = new Float32Array(particleCount);
+    const particleSpeed = new Float32Array(particleCount);
+    for (let i = 0; i < particleCount; i++) {
+      const angle = (i / particleCount) * Math.PI * 2;
+      const radius = 0.018 + Math.random() * 0.01;
+      particlePos[i*3] = Math.cos(angle) * radius;
+      particlePos[i*3+1] = Math.sin(angle) * radius;
+      particlePos[i*3+2] = 0;
+      particlePhase[i] = Math.random() * Math.PI * 2;
+      particleSpeed[i] = 0.8 + Math.random() * 0.6;
+    }
+    particleGeom.setAttribute('position', new THREE.BufferAttribute(particlePos, 3));
+    particleGeom.setAttribute('aPhase', new THREE.BufferAttribute(particlePhase, 1));
+    particleGeom.setAttribute('aSpeed', new THREE.BufferAttribute(particleSpeed, 1));
+    
+    const particleMat = new THREE.PointsMaterial({
+      color,
+      size: 0.006,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    particles = new THREE.Points(particleGeom, particleMat);
+    group.add(particles);
+  }
+  
+  // 6. Directional indicator (points to event location)
+  const indicatorGeom = new THREE.ConeGeometry(0.006, 0.02, 4);
+  const indicatorMat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.6,
+    depthWrite: false
+  });
+  const indicator = new THREE.Mesh(indicatorGeom, indicatorMat);
+  indicator.rotation.x = -Math.PI / 2;
+  indicator.position.z = 0.025;
+  group.add(indicator);
+  
+  const pos = latLngToVec3(event.lat, event.lng, GLOBE_RADIUS * 1.015);
+  group.position.copy(pos);
+  group.lookAt(new THREE.Vector3(0, 0, 0));
+  
+  // Store animation data
+  group.userData = { 
+    type: 'event', 
+    ...event, 
+    pulsePhase, 
+    baseSpeed,
+    severity,
+    outerRing,
+    midRing,
+    coreRing,
+    glowSprite,
+    indicator,
+    particles,
+    startTime: performance.now()
+  };
+  
+  return group;
+}
+
+// ─────────────────────────────────────
+// LAT/LNG → 3D CONVERSION
+// ─────────────────────────────────────
+function latLngToVec3(lat, lng, radius = GLOBE_RADIUS) {
+  const phi = (90 - lat) * Math.PI / 180;
+  const theta = (lng + 180) * Math.PI / 180;
+  return new THREE.Vector3(
+    -radius * Math.sin(phi) * Math.cos(theta),
+    radius * Math.cos(phi),
+    radius * Math.sin(phi) * Math.sin(theta)
+  );
+}
+
+// ─────────────────────────────────────
+// MARKER GROUPS
+// ─────────────────────────────────────
+const cityGroup = new THREE.Group();
+const eventGroup = new THREE.Group();
+const borderGroup = new THREE.Group();
+scene.add(cityGroup);
+scene.add(eventGroup);
+scene.add(borderGroup);
+
+// City markers (small dots)
+const cityDotGeom = new THREE.SphereGeometry(0.008, 8, 8);
+const cityDotMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+cities.forEach(c => {
+  const dot = new THREE.Mesh(cityDotGeom, cityDotMat.clone());
+  const pos = latLngToVec3(c.lat, c.lng, GLOBE_RADIUS * 1.005);
+  dot.position.copy(pos);
+  dot.userData = { type:'city', ...c };
+  cityGroup.add(dot);
+});
+
+// Category colors for event markers
+const catColors = {
+  conflict: 0xff5544,
+  diplomatic: 0x4da6ff,
+  humanitarian: 0xffaa22,
+  political: 0xcc66ff,
+};
+
+// Event marker initialization (called after events loaded)
+function initializeEventMarkers() {
+  // Clear existing markers
+  while (eventGroup.children.length > 0) {
+    eventGroup.remove(eventGroup.children[0]);
+  }
+  events.forEach(e => {
+    const marker = createEventMarker(e, catColors[e.cat] || 0x888888);
+    eventGroup.add(marker);
+  });
+}
+// ─────────────────────────────────────
+// COUNTRY BORDERS (GeoJSON async)
+// ─────────────────────────────────────
+async function loadBorders() {
+  try {
+    const resp = await fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson');
+    if (!resp.ok) throw new Error('fetch failed');
+    const geojson = await resp.json();
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x335577, transparent: true, opacity: 0.5, depthTest: true });
+
+    geojson.features.forEach(feature => {
+      const coords = feature.geometry.coordinates;
+      const processRing = (ring) => {
+        const pts = ring.map(([lng, lat]) => latLngToVec3(lat, lng, GLOBE_RADIUS * 1.003));
+        const geom = new THREE.BufferGeometry().setFromPoints(pts);
+        const line = new THREE.Line(geom, lineMat);
+        borderGroup.add(line);
+      };
+      if (feature.geometry.type === 'Polygon') {
+        coords.forEach(processRing);
+      } else if (feature.geometry.type === 'MultiPolygon') {
+        coords.forEach(poly => poly.forEach(processRing));
+      }
+    });
+    updateInfoBar();
+  } catch (e) {
+    console.log('Border GeoJSON load failed — globe renders without borders', e.message);
+  }
+}
+loadBorders();
+
+// ─────────────────────────────────────
+// RAYCASTER (click/hover)
+// ─────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+raycaster.params.Points.threshold = 0.05;
+raycaster.params.Line = { threshold: 0.02 };
+const mouse = new THREE.Vector2();
+
+function getIntersections(event) {
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const targets = [...cityGroup.children, ...eventGroup.children];
+  return raycaster.intersectObjects(targets, true);
+}
+
+// ─────────────────────────────────────
+// TOOLTIP
+// ─────────────────────────────────────
+const tooltip = document.getElementById('tooltip');
+const ttTitle = tooltip.querySelector('.tt-title');
+const ttDetail = tooltip.querySelector('.tt-detail');
+
+function showTooltip(x, y, data) {
+  tooltip.style.left = (x + 16) + 'px';
+  tooltip.style.top = (y - 10) + 'px';
+  if (data.type === 'event') {
+    const cat = data.cat || data.category;
+    const date = data.date || data.published_at?.split('T')[0] || '';
+    ttTitle.textContent = data.title;
+    ttDetail.textContent = `${data.region} · ${cat.toUpperCase()} · ${date}`;
+  } else if (data.type === 'city') {
+    ttTitle.textContent = data.name;
+    ttDetail.textContent = `Population: ${data.pop}`;
+  } else if (data.type === 'geo') {
+    ttTitle.textContent = data.name;
+    ttDetail.textContent = `Geological feature · ${data.type}`;
+  }
+  tooltip.classList.add('visible');
+}
+
+function hideTooltip() {
+  tooltip.classList.remove('visible');
+}
+
+window.addEventListener('mousemove', (e) => {
+  const hits = getIntersections(e);
+  if (hits.length > 0) {
+    let obj = hits[0].object;
+    while (obj && !obj.userData?.type) obj = obj.parent;
+    if (obj?.userData?.type) {
+      showTooltip(e.clientX, e.clientY, obj.userData);
+      container.style.cursor = 'pointer';
+      return;
+    }
+  }
+  hideTooltip();
+  container.style.cursor = controls.enabled ? (container.classList.contains('grabbing') ? 'grabbing' : 'grab') : 'default';
+});
+
+// ─────────────────────────────────────
+// CLICK → FLY TO
+// ─────────────────────────────────────
+let flyTarget = null;
+let flyStart = null;
+let flyProgress = 0;
+const flyDuration = 1.2; // seconds
+
+window.addEventListener('click', (e) => {
+  if (e.target.closest('#sidebar') || e.target.closest('#sidebar-toggle') ||
+      e.target.closest('.filter-btn') || e.target.closest('#me-zoom') ||
+      e.target.closest('#search') || e.target.closest('#event-popup')) return;
+
+  const hits = getIntersections(e);
+  if (hits.length > 0) {
+    let obj = hits[0].object;
+    while (obj && !obj.userData?.type) obj = obj.parent;
+    if (obj?.userData?.type === 'event') {
+      stopAutoRotate();
+      selectEvent(obj.userData.id);
+    } else if (obj?.userData?.type === 'city') {
+      stopAutoRotate();
+      hideEventPopup();
+      flyToPosition(latLngToVec3(obj.userData.lat, obj.userData.lng, GLOBE_RADIUS * 1.5));
+    } else if (obj?.userData?.type === 'geo') {
+      stopAutoRotate();
+      hideEventPopup();
+      flyToPosition(latLngToVec3(obj.userData.lat, obj.userData.lng, GLOBE_RADIUS * 1.8));
+    }
+  } else {
+    // Clicked empty space — close popup
+    hideEventPopup();
+  }
+});
+
+function flyToPosition(targetPos) {
+  flyTarget = targetPos.clone();
+  flyStart = camera.position.clone();
+  flyProgress = 0;
+}
+
+function selectEvent(id) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+  const pos = latLngToVec3(ev.lat, ev.lng, GLOBE_RADIUS * 1.6);
+  flyToPosition(pos);
+
+  // Highlight in sidebar
+  document.querySelectorAll('.event-card').forEach(c => c.classList.remove('selected'));
+  const card = document.querySelector(`[data-event-id="${id}"]`);
+  if (card) {
+    card.classList.add('selected');
+    card.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+
+  // Show detail popup
+  showEventPopup(ev, pos);
+}
+
+// ─────────────────────────────────────
+// EVENT DETAIL POPUP
+// ─────────────────────────────────────
+const eventPopup = document.getElementById('event-popup');
+const eventPopupClose = document.getElementById('event-popup-close');
+const eventPopupTitle = document.getElementById('event-popup-title');
+const eventPopupMeta = document.getElementById('event-popup-meta');
+const eventPopupDesc = document.getElementById('event-popup-desc');
+let activePopupEvent = null;
+let activePopupWorldPos = null;
+let popupScreenPos = null; // {x, y} — projected once on show
+
+function timeAgoStr(dateStr) {
+  if (!dateStr) return '';
+  const then = new Date(dateStr).getTime();
+  if (!then) return '';
+  const diffSec = Math.floor((Date.now() - then) / 1000);
+  if (diffSec < 60) return 'just now';
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  return `${Math.floor(diffSec / 86400)}d ago`;
+}
+
+function sevLabel(severity) {
+  if (severity >= 70) return 'high';
+  if (severity >= 40) return 'medium';
+  return 'low';
+}
+
+function sevColors(sev) {
+  const colors = {
+    high: { bg: 'rgba(255,100,68,0.25)', text: 'var(--accent2)' },
+    medium: { bg: 'rgba(255,170,34,0.25)', text: 'var(--accent3)' },
+    low: { bg: 'rgba(68,221,136,0.25)', text: 'var(--accent4)' }
+  };
+  return colors[sev] || colors.medium;
+}
+
+function showEventPopup(ev, worldPos) {
+  activePopupEvent = ev;
+  activePopupWorldPos = worldPos.clone();
+  eventPopupTitle.textContent = ev.title;
+  const cat = ev.cat || ev.category;
+  const severity = ev.severity || (ev.sev === 'high' ? 80 : ev.sev === 'medium' ? 50 : 20);
+  const sev = ev.sev || sevLabel(severity);
+  const colors = sevColors(sev);
+  eventPopupMeta.innerHTML = `
+    <span>${ev.region || ev.location_name || ''}</span>
+    <span>${ev.date || ev.published_at?.split('T')[0] || ''}</span>
+    <span class="sev-badge" style="background:${colors.bg};color:${colors.text}">${sev}</span>
+    <span class="cat-badge" style="background:rgba(77,166,255,0.2);color:var(--accent)">${(cat||'').toUpperCase()}</span>
+  `;
+
+  // Build the body
+  let html = '';
+
+  // Source & confidence bar
+  const osintConfidence = ev.confidence || 0;
+  const confPct = Math.round(osintConfidence * 100);
+  const confColor = osintConfidence >= 0.7 ? 'var(--accent4)' : osintConfidence >= 0.4 ? 'var(--accent3)' : 'var(--accent2)';
+  let sourceDomain = '';
+  if (ev.url) {
+    try { sourceDomain = new URL(ev.url).hostname.replace(/^www\./, ''); } catch (e) {}
+  }
+  const timeAgo = ev.date ? timeAgoStr(ev.date) : '';
+  html += `<div class="popup-osint">
+    <span class="osint-confidence" style="color:${confColor}">${confPct}% confidence</span>
+    ${sourceDomain ? `<span class="osint-source">${sourceDomain}</span>` : ''}
+    ${timeAgo ? `<span class="osint-freshness">${timeAgo}</span>` : ''}
+  </div>`;
+
+  // Summary
+  const rawSummary = ev.desc || ev.summary || '';
+  let cleanSummary = rawSummary.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (cleanSummary.length > 320) cleanSummary = cleanSummary.slice(0, 317) + '…';
+  if (!cleanSummary) cleanSummary = ev.title;
+  html += `<p class="popup-summary">${cleanSummary}</p>`;
+
+  // Casualties
+  const cas = ev.casualties;
+  if (cas && (cas.killed || cas.wounded || cas.civilian)) {
+    const parts = [];
+    if (cas.killed) parts.push(`${cas.killed} killed`);
+    if (cas.wounded) parts.push(`${cas.wounded} wounded`);
+    if (cas.civilian) parts.push(`${cas.civilian} civilian`);
+    html += `<div class="popup-casualties">⚠ ${parts.join(' · ')}</div>`;
+  }
+
+  // Actors
+  if (Array.isArray(ev.actors) && ev.actors.length) {
+    const names = ev.actors.map(a => a.full_name || a.name).filter(Boolean).slice(0, 4);
+    if (names.length) html += `<div class="popup-actors">Actors: ${names.join(', ')}</div>`;
+  }
+
+  // Action buttons row
+  const searchQuery = encodeURIComponent(ev.title.replace(/['"]/g, ''));
+  let actionsHtml = '<div class="popup-actions">';
+
+  // Article link (if URL exists)
+  if (ev.url) {
+    let host = '';
+    try { host = new URL(ev.url).hostname.replace(/^www\./, ''); } catch (e) { host = 'source'; }
+    actionsHtml += `<a class="popup-action-btn primary" href="${ev.url}" target="_blank" rel="noopener noreferrer">📰 Article</a>`;
+    actionsHtml += `<a class="popup-action-btn" href="https://news.google.com/search?q=${searchQuery}" target="_blank" rel="noopener">📋 More News</a>`;
+  } else {
+    actionsHtml += `<a class="popup-action-btn primary" href="https://news.google.com/search?q=${searchQuery}" target="_blank" rel="noopener noreferrer">📋 Find News</a>`;
+  }
+  actionsHtml += `<a class="popup-action-btn video" href="https://www.youtube.com/results?search_query=${searchQuery}" target="_blank" rel="noopener noreferrer">▶ Video</a>`;
+  actionsHtml += '</div>';
+  html += actionsHtml;
+
+  // Related events placeholder (filled async)
+  html += '<div class="popup-related" id="popup-related"><div class="related-label">Related events</div><div class="related-loading">Loading...</div></div>';
+
+  eventPopupDesc.innerHTML = html;
+  eventPopup.classList.add('visible');
+
+  // Project 3D position to screen coordinates ONCE (stable position, doesn't follow rotation)
+  const proj = worldPos.clone().project(camera);
+  const sx = (proj.x * 0.5 + 0.5) * window.innerWidth;
+  const sy = (-proj.y * 0.5 + 0.5) * window.innerHeight;
+  popupScreenPos = { x: sx, y: sy, behindCamera: proj.z > 1 };
+  applyPopupScreenPosition();
+
+  // Fetch related events asynchronously
+  fetchRelatedEvents(ev);
+}
+
+function applyPopupScreenPosition() {
+  if (!popupScreenPos || popupScreenPos.behindCamera) {
+    eventPopup.classList.remove('visible');
+    return;
+  }
+  // Clamp to viewport bounds
+  const pw = eventPopup.offsetWidth || 320;
+  const ph = eventPopup.offsetHeight || 200;
+  const clampedX = Math.max(10, Math.min(window.innerWidth - pw - 10, popupScreenPos.x));
+  const clampedY = Math.max(10, Math.min(window.innerHeight - ph - 10, popupScreenPos.y));
+  eventPopup.style.left = clampedX + 'px';
+  eventPopup.style.top = clampedY + 'px';
+  eventPopup.classList.add('visible');
+}
+
+async function fetchRelatedEvents(ev) {
+  const container = document.getElementById('popup-related');
+  if (!container) return;
+  try {
+    const resp = await fetch(`${API_BASE}/events/${ev.id}/related?limit=4`);
+    if (!resp.ok) throw new Error('API error');
+    const related = await resp.json();
+    if (related.length === 0) {
+      container.innerHTML = '<div class="related-label">Related events</div><div class="related-none">None found</div>';
+      return;
+    }
+    let html = '<div class="related-label">Related events</div>';
+    related.forEach(r => {
+      const rc = catColors[r.category] || 0x888888;
+      const rsev = r.severity >= 70 ? 'high' : r.severity >= 40 ? 'medium' : 'low';
+      html += `
+        <div class="related-item" data-id="${r.id}">
+          <span class="related-dot" style="background:#${rc.toString(16).padStart(6,'0')}"></span>
+          <span class="related-title">${r.title}</span>
+          <span class="related-sev ${rsev}">${rsev}</span>
+        </div>`;
+    });
+    container.innerHTML = html;
+    // Click handler for related items
+    container.querySelectorAll('.related-item').forEach(item => {
+      item.addEventListener('click', () => selectEvent(parseInt(item.dataset.id)));
+    });
+  } catch (e) {
+    if (container) container.innerHTML = '<div class="related-label">Related events</div><div class="related-none">Could not load</div>';
+  }
+}
+
+function hideEventPopup() {
+  eventPopup.classList.remove('visible');
+  activePopupEvent = null;
+  activePopupWorldPos = null;
+  popupScreenPos = null;
+  document.querySelectorAll('.event-card').forEach(c => c.classList.remove('selected'));
+}
+
+eventPopupClose.addEventListener('click', (e) => {
+  e.stopPropagation();
+  hideEventPopup();
+});
+
+// ─────────────────────────────────────
+// EASE FLY CAMERA
+// ─────────────────────────────────────
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+// ─────────────────────────────────────
+// SIDEBAR EVENT LIST
+// ─────────────────────────────────────
+const eventList = document.getElementById('event-list');
+let activeFilter = 'all';
+
+function renderEventList(filter = 'all', search = '') {
+  const filtered = events.filter(e => {
+    const cat = e.cat || e.category;
+    if (filter !== 'all' && cat !== filter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return e.title.toLowerCase().includes(q) || e.region.toLowerCase().includes(q) || (e.desc || e.summary || '').toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  // Sort by severity desc, then date desc
+  filtered.sort((a, b) => (b.severity || 0) - (a.severity || 0));
+
+  // Derive severity label from numeric severity
+  function sevLabel(severity) {
+    if (severity >= 70) return 'high';
+    if (severity >= 40) return 'medium';
+    return 'low';
+  }
+
+  eventList.innerHTML = filtered.map(e => {
+    const cat = e.cat || e.category;
+    const severity = e.severity || (e.sev === 'high' ? 80 : e.sev === 'medium' ? 50 : 20);
+    const sev = e.sev || sevLabel(severity);
+    const color = catColors[cat] || 0x888888;
+    // Source domain for card
+    let cardSource = '';
+    if (e.url) { try { cardSource = new URL(e.url).hostname.replace(/^www\./, '').split('.')[0]; } catch (ex) {} }
+    return `
+    <div class="event-card" data-event-id="${e.id}">
+      <div class="cat-dot" style="background:${'#' + color.toString(16).padStart(6,'0')}"></div>
+      <div class="event-title">${e.title}</div>
+      <div class="event-meta">
+        <span>${e.region}</span>
+        <span>${e.date || e.published_at?.split('T')[0] || ''}</span>
+        ${cardSource ? `<span class="card-source">${cardSource}</span>` : ''}
+        <span class="severity ${sev}">${sev}</span>
+      </div>
+    </div>
+  `;
+  }).join('');
+
+  document.getElementById('event-count').textContent = filtered.length;
+
+  // Re-bind click handlers
+  eventList.querySelectorAll('.event-card').forEach(card => {
+    card.addEventListener('click', () => selectEvent(parseInt(card.dataset.eventId)));
+  });
+}
+// window._selectEvent = selectEvent;
+// renderEventList();  // Called after API load
+
+// Filter buttons
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeFilter = btn.dataset.filter;
+    renderEventList(activeFilter, document.getElementById('search').value);
+  });
+});
+
+// Search
+document.getElementById('search').addEventListener('input', (e) => {
+  renderEventList(activeFilter, e.target.value);
+});
+
+// Middle East zoom
+document.getElementById('me-zoom').addEventListener('click', () => {
+  const meCenter = latLngToVec3(27, 48, GLOBE_RADIUS * 1.9);
+  flyToPosition(meCenter);
+});
+
+// Sidebar toggle
+const sidebar = document.getElementById('sidebar');
+const sidebarToggle = document.getElementById('sidebar-toggle');
+sidebarToggle.addEventListener('click', () => {
+  sidebar.classList.toggle('collapsed');
+});
+
+// ─────────────────────────────────────
+// REFRESH TIMER
+// ─────────────────────────────────────
+const refreshSelect = document.getElementById('refresh-interval');
+const refreshTimer = document.getElementById('refresh-timer');
+let refreshIntervalMinutes = 30;
+let nextRefreshTime = Date.now() + refreshIntervalMinutes * 60 * 1000;
+let refreshTimerId = null;
+
+function updateRefreshTimer() {
+  const remaining = Math.max(0, Math.ceil((nextRefreshTime - Date.now()) / 1000));
+  if (remaining <= 0 && refreshIntervalMinutes > 0) {
+    refreshTimer.textContent = 'Refreshing...';
+    refreshEvents();
+    nextRefreshTime = Date.now() + refreshIntervalMinutes * 60 * 1000;
+  } else if (refreshIntervalMinutes === 0) {
+    refreshTimer.textContent = 'Manual';
+  } else {
+    const m = Math.floor(remaining / 60);
+    const s = remaining % 60;
+    refreshTimer.textContent = `Next: ${m}:${s.toString().padStart(2,'0')}`;
+  }
+}
+
+async function refreshEvents() {
+  // Pulse the refresh timer to show activity
+  refreshTimer.style.color = 'var(--accent2)';
+  setTimeout(() => { refreshTimer.style.color = 'var(--accent)'; }, 1500);
+
+  // Reload events from API
+  await loadEventsFromAPI();
+
+  // Update sidebar freshness
+  document.getElementById('updated-time').textContent =
+    `• Updated ${new Date().toLocaleTimeString()}`;
+
+  updateInfoBar();
+}
+
+refreshSelect.addEventListener('change', () => {
+  refreshIntervalMinutes = parseInt(refreshSelect.value);
+  if (refreshIntervalMinutes > 0) {
+    nextRefreshTime = Date.now() + refreshIntervalMinutes * 60 * 1000;
+  }
+  updateRefreshTimer();
+});
+
+// Manual refresh button
+document.getElementById('manual-refresh').addEventListener('click', () => {
+  refreshEvents();
+  nextRefreshTime = Date.now() + refreshIntervalMinutes * 60 * 1000;
+  updateRefreshTimer();
+});
+
+// Tick every second
+setInterval(updateRefreshTimer, 1000);
+updateRefreshTimer();
+
+// ─────────────────────────────────────
+// INFO BAR
+// ─────────────────────────────────────
+function updateInfoBar() {
+  document.getElementById('event-count').textContent = events.length;
+}
+updateInfoBar();
+
+// ─────────────────────────────────────
+// ANIMATION LOOP (fully dynamic)
+// ─────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate(time) {
+  requestAnimationFrame(animate);
+
+  const dt = Math.min(clock.getDelta(), 0.1);
+  const t = time * 0.001;
+  controls.update();
+
+  // Scale rotate speed with zoom — precise when close, faster when far
+  const dist = camera.position.length();
+  controls.rotateSpeed = 0.30 * (dist / GLOBE_RADIUS);
+  controls.autoRotateSpeed = 0.20 * (dist / GLOBE_RADIUS);
+
+  // Resume auto-rotate after inactivity (unless manually stopped)
+  if (!controls.autoRotate && !flyTarget && !autoRotateManuallyStopped) {
+    if (t - lastUserInteraction > AUTO_ROTATE_RESUME_DELAY) {
+      controls.autoRotate = true;
+    }
+  }
+
+  // Fly camera
+  if (flyTarget) {
+    flyProgress += dt / flyDuration;
+    if (flyProgress >= 1) {
+      camera.position.copy(flyTarget);
+      controls.target.set(0, 0, 0);
+      flyTarget = null;
+      flyStart = null;
+    } else {
+      const ease = easeInOutCubic(flyProgress);
+      camera.position.lerpVectors(flyStart, flyTarget, ease);
+    }
+  }
+
+  const newDist = camera.position.length();
+  const newZoomLevel = newDist / GLOBE_RADIUS;
+
+  // ─────────────────────────────────────
+  // DYNAMIC SUN / DAY-NIGHT CYCLE
+  // ─────────────────────────────────────
+  const sunDir = getSunDirection();
+
+  // Update globe shader uniforms
+  globeMat.uniforms.uSunDirection.value.copy(sunDir);
+  globeMat.uniforms.uCameraPos.value.copy(camera.position);
+
+  // Update atmosphere shader
+  atmosMat.uniforms.uSunDirection.value.copy(sunDir);
+  atmosMat.uniforms.uCameraPos.value.copy(camera.position);
+
+  // Update sun light position (follow real sun)
+  sunLight.position.copy(sunDir.clone().multiplyScalar(10));
+  sunLight.target.position.set(0, 0, 0);
+
+  // Adjust ambient based on how much of globe is lit (subtle)
+  const litFraction = (sunDir.y + 1) * 0.5; // rough approximation
+  ambientLight.intensity = 1.2 + litFraction * 0.4;
+
+  // ─────────────────────────────────────
+  // SMOOTH ZOOM-AWARE LABEL SCALING
+  // ─────────────────────────────────────
+  // Zoom in → labels grow, zoom out → labels shrink, continuous per frame
+  const labelZoom = Math.max(0.25, Math.min(3.5, newZoomLevel / 1.7));
+  countryLabelGroup.children.forEach(sprite => {
+    if (!sprite.userData) return;
+    const base = sprite.userData.baseHeight || 0.072;
+    const aspect = sprite.scale.x / sprite.scale.y || 1;
+    sprite.scale.set(base * aspect * labelZoom, base * labelZoom, 1);
+    // Fade minor labels smoothly across a wide zoom range
+    if (sprite.userData.minor) {
+      sprite.material.opacity = newZoomLevel < 1.8 ? 1.0 : Math.max(0, 1.0 - (newZoomLevel - 1.8) * 0.85);
+    }
+  });
+  cityLabelGroup.children.forEach(sprite => {
+    const base = sprite.userData?.baseHeight || 0.055;
+    const aspect = sprite.scale.x / sprite.scale.y || 1;
+    sprite.scale.set(base * aspect * labelZoom * 0.75, base * labelZoom * 0.75, 1);
+  });
+
+  // Show/hide country labels by zoom threshold
+  const showMinorLabels = newZoomLevel < 3.0;
+  countryLabelGroup.children.forEach(sprite => {
+    if (sprite.userData && sprite.userData.minor) {
+      sprite.visible = showMinorLabels;
+    }
+  });
+
+  // Fade city labels when zoomed far out
+  const cityLabelOpacity = newZoomLevel < 1.8 ? 1.0 : Math.max(0, 1.0 - (newZoomLevel - 1.8) * 0.85);
+  cityLabelGroup.children.forEach(sprite => {
+    sprite.material.opacity = cityLabelOpacity;
+  });
+
+  // Event markers: naturally larger when close, smaller when far
+  const markerZoom = Math.max(0.5, Math.min(1.6, 1.8 / newZoomLevel));
+
+  eventGroup.children.forEach(marker => {
+    const ud = marker.userData;
+    const elapsed = (performance.now() - ud.startTime) * 0.001;
+    const phase = ud.pulsePhase;
+    const speed = ud.baseSpeed;
+
+    // Outer ring: expanding pulse wave (subtle, zoom-scaled)
+    if (ud.outerRing) {
+      const outerPhase = (elapsed * speed + phase) % (Math.PI * 2);
+      const outerScale = (1 + outerPhase * 0.12) * markerZoom;
+      const outerOpacity = (1 - outerPhase / (Math.PI * 2)) * 0.35;
+      ud.outerRing.scale.setScalar(outerScale);
+      ud.outerRing.material.opacity = outerOpacity;
+    }
+
+    // Middle ring: steady pulse
+    if (ud.midRing) {
+      const midScale = (1 + Math.sin(elapsed * speed * 1.5 + phase) * 0.18) * markerZoom;
+      ud.midRing.scale.setScalar(midScale);
+      ud.midRing.material.opacity = 0.45 + Math.sin(elapsed * speed * 1.5 + phase) * 0.25;
+    }
+
+    // Core ring: subtle breathing
+    if (ud.coreRing) {
+      ud.coreRing.scale.setScalar((1 + Math.sin(elapsed * speed * 0.8 + phase) * 0.08) * markerZoom);
+    }
+
+    // Glow sprite: pulse, zoom-scaled
+    if (ud.glowSprite) {
+      const glowScale = 0.05 * markerZoom * (1 + Math.sin(elapsed * speed * 2 + phase) * 0.3);
+      ud.glowSprite.scale.set(glowScale, glowScale, 1);
+      ud.glowSprite.material.opacity = 0.6 + Math.sin(elapsed * speed * 2 + phase) * 0.25;
+    }
+
+    // Particles: orbiting for high severity (zoom-scaled radius)
+    if (ud.particles && ud.particles.geometry) {
+      const positions = ud.particles.geometry.attributes.position.array;
+      const phases = ud.particles.geometry.attributes.aPhase.array;
+      const speeds = ud.particles.geometry.attributes.aSpeed.array;
+      const count = positions.length / 3;
+      for (let i = 0; i < count; i++) {
+        const angle = elapsed * speeds[i] + phases[i];
+        const baseRadius = (0.018 + Math.sin(elapsed * 0.5 + phases[i]) * 0.004) * markerZoom;
+        positions[i*3] = Math.cos(angle) * baseRadius;
+        positions[i*3+1] = Math.sin(angle) * baseRadius;
+        positions[i*3+2] = Math.sin(elapsed * 2 + phases[i]) * 0.003;
+      }
+      ud.particles.geometry.attributes.position.needsUpdate = true;
+      ud.particles.material.opacity = 0.5 + Math.sin(elapsed * speed + phase) * 0.3;
+      ud.particles.rotation.z += dt * 0.3;
+    }
+
+    // Indicator: slow rotation
+    if (ud.indicator) {
+      ud.indicator.rotation.z += dt * 0.5;
+      ud.indicator.scale.setScalar(markerZoom);
+      ud.indicator.material.opacity = 0.4 + Math.sin(elapsed * speed * 0.5 + phase) * 0.2;
+    }
+
+    marker.lookAt(new THREE.Vector3(0, 0, 0));
+  });
+
+  // ─────────────────────────────────────
+  // DYNAMIC BACKGROUND ELEMENTS
+  // ─────────────────────────────────────
+  // Stars: subtle rotation + twinkle
+  stars.rotation.y += dt * 0.008;
+  stars.material.opacity = 0.7 + Math.sin(t * 0.2) * 0.15;
+  
+    // City dots: subtle twinkle
+  cityGroup.children.forEach((dot, i) => {
+    dot.material.opacity = 0.8 + Math.sin(t * 0.7 + i * 0.1) * 0.2;
+    dot.scale.setScalar(1 + Math.sin(t * 1.2 + i * 0.1) * 0.1);
+  });
+
+  // ─────────────────────────────────────
+  // POSITION EVENT POPUP (using stored screen position, re-project during fly-to)
+  // ─────────────────────────────────────
+  if (activePopupWorldPos) {
+    // Re-project during fly-to animation so popup moves with the globe
+    if (flyTarget) {
+      const proj = activePopupWorldPos.clone().project(camera);
+      const sx = (proj.x * 0.5 + 0.5) * window.innerWidth;
+      const sy = (-proj.y * 0.5 + 0.5) * window.innerHeight;
+      popupScreenPos = { x: sx, y: sy, behindCamera: proj.z > 1 };
+    }
+    if (popupScreenPos) {
+      applyPopupScreenPosition();
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ─────────────────────────────────────
+// RESIZE
+// ─────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = container.clientWidth / container.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(container.clientWidth, container.clientHeight);
+});
+
+// ─────────────────────────────────────
+// LABELS TOGGLE
+// ─────────────────────────────────────
+const labelsToggle = document.getElementById('labels-toggle');
+labelsToggle.addEventListener('click', () => {
+  labelsVisible = !labelsVisible;
+  if (labelsVisible) {
+    labelsToggle.innerHTML = '<span class="pill-dot"></span>Labels';
+    labelsToggle.classList.add('active');
+    countryLabelGroup.visible = true;
+    cityLabelGroup.visible = true;
+  } else {
+    labelsToggle.innerHTML = '<span class="pill-dot"></span>Labels';
+    labelsToggle.classList.remove('active');
+    countryLabelGroup.visible = false;
+    cityLabelGroup.visible = false;
+  }
+});
+
+// ─────────────────────────────────────
+// KEYBOARD SHORTCUTS
+// ─────────────────────────────────────
+window.addEventListener('keydown', (e) => {
+  switch (e.key.toLowerCase()) {
+    case 'm':
+      document.getElementById('me-zoom').click();
+      break;
+    case 's':
+      document.getElementById('search').focus();
+      break;
+    case 'r':
+      controls.autoRotate = !controls.autoRotate;
+      autoRotateManuallyStopped = false;
+      break;
+    case 'escape':
+      document.querySelectorAll('.event-card').forEach(c => c.classList.remove('selected'));
+      break;
+    case 'b':
+      sidebar.classList.toggle('collapsed');
+      break;
+    case 'l':
+      labelsToggle.click();
+      break;
+  }
+});
+
+// ─────────────────────────────────────
+// START
+// ─────────────────────────────────────
+// Load events from API, then start animation
+loadEventsFromAPI().then(() => {
+  requestAnimationFrame(animate);
+  console.log('🌍 World Event Globe ready — M=ME zoom, S=search, R=rotate toggle, B=sidebar');
+});
+</script>
+</body>
+</html>
