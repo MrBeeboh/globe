@@ -330,6 +330,21 @@ function render() {
   conn.className = state.mode;
   conn.querySelector('.conn-label').textContent =
     state.mode === 'live' ? 'Live' : state.mode === 'sample' ? 'Sample Data' : 'Connecting…';
+
+  const tickerMode = $('ticker-mode');
+  if (tickerMode) {
+    tickerMode.className = 'ticker-label mode-' + state.mode;
+    if (state.mode === 'live') {
+      tickerMode.textContent = 'Headlines';
+      tickerMode.title = 'Scrolling top-severity events from live feeds (GDELT, USGS, GDACS, RSS)';
+    } else if (state.mode === 'sample') {
+      tickerMode.textContent = 'Sample';
+      tickerMode.title = 'Demo headlines — connect to backend for live feed data';
+    } else {
+      tickerMode.textContent = 'Sync…';
+      tickerMode.title = 'Loading events…';
+    }
+  }
 }
 
 function renderFeed(evs) {
