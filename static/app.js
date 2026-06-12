@@ -91,6 +91,7 @@ const globe = new Globe($('scene'), {
   onSelect(ev) { selectEvent(ev, { fly: false }); },
   onZoneSelect(zone) { selectZone(zone, { fly: false }); },
 });
+window.__globe = globe; // console/debug handle
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

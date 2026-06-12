@@ -278,15 +278,22 @@ function paintOcean(ctx, W, H) {
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
 
-  // Subtle swell bands
-  ctx.globalAlpha = 0.07;
+  // Subtle swell bands. Constant-latitude stripes turn into concentric
+  // circles around the poles, so fade them out above |lat| 55° and use
+  // wave frequencies that tile across the texture seam.
+  const k1 = (2 * Math.PI * 4) / W;
+  const k2 = (2 * Math.PI * 11) / W;
   for (let band = 0; band < 90; band++) {
     const y0 = (band / 90) * H;
+    const lat = Math.abs(90 - (y0 / H) * 180);
+    const fade = Math.min(1, Math.max(0, (75 - lat) / 20));
+    if (fade <= 0.01) continue;
+    ctx.globalAlpha = 0.07 * fade;
     ctx.strokeStyle = band % 2 ? '#5ec8f0' : '#1a5a8a';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let x = 0; x <= W; x += 16) {
-      const y = y0 + Math.sin(x * 0.006 + band * 0.7) * 8 + Math.sin(x * 0.017) * 4;
+      const y = y0 + Math.sin(x * k1 + band * 0.7) * 8 + Math.sin(x * k2) * 4;
       x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
     ctx.stroke();
@@ -300,17 +307,75 @@ function paintOcean(ctx, W, H) {
   ctx.globalAlpha = 1;
 }
 
+// Pseudo-edges introduced by the equirectangular cut: Antarctica's ring runs
+// along lat −90 and up the antimeridian. Stroking them paints fake coastline
+// that collapses into bullseye rings around the south pole (and a seam line).
+function isPseudoEdge(a, b) {
+  if (a[1] <= -89.5 && b[1] <= -89.5) return true;
+  if (Math.abs(a[0]) >= 179.99 && Math.abs(b[0]) >= 179.99) return true;
+  if (Math.abs(a[0] - b[0]) > 180) return true; // wraps the antimeridian
+  return false;
+}
+
+// Net eastward travel in degrees; ±360 means the ring encircles a pole.
+function ringWinding(ring) {
+  let total = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    let d = ring[i + 1][0] - ring[i][0];
+    if (d > 180) d -= 360; else if (d < -180) d += 360;
+    total += d;
+  }
+  return total;
+}
+
 function drawCountryPaths(ctx, countriesGeo, px, { fill, stroke, lineWidth = 1.2 } = {}) {
   for (const f of countriesGeo.features) {
     const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
     for (const poly of polys) {
       ctx.beginPath();
       for (const ring of poly) {
-        ring.forEach(([lon, lat], i) => {
-          const [x, y] = px(lon, lat);
-          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        });
-        ctx.closePath();
+        if (stroke && !fill) {
+          let pen = false;
+          for (let i = 0; i < ring.length - 1; i++) {
+            const a = ring[i], b = ring[i + 1];
+            if (isPseudoEdge(a, b)) { pen = false; continue; }
+            const [x0, y0] = px(a[0], a[1]);
+            const [x1, y1] = px(b[0], b[1]);
+            if (!pen) { ctx.moveTo(x0, y0); pen = true; }
+            ctx.lineTo(x1, y1);
+          }
+        } else {
+          // Degenerate cap-edge ring (all points on the lat −90 cut): no area.
+          if (ring.every((p) => p[1] <= -89.5)) continue;
+          if (Math.abs(ringWinding(ring)) >= 350) {
+            // Ring encircles a pole. Draw with unwrapped longitudes and close
+            // along the pole edge of the map, otherwise the closing chord cuts
+            // across and the polar cap is left unfilled (ocean bullseye).
+            const south = ring[0][1] < 0;
+            const poleLat = south ? -90 : 90;
+            let lonU = ring[0][0];
+            ring.forEach(([lon, lat], i) => {
+              if (i > 0) {
+                let d = lon - ring[i - 1][0];
+                if (d > 180) d -= 360; else if (d < -180) d += 360;
+                lonU += d;
+              }
+              const [x, y] = px(lonU, lat);
+              i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            });
+            const [xEnd, yPole] = px(lonU, poleLat);
+            const [xStart] = px(ring[0][0], poleLat);
+            ctx.lineTo(xEnd, yPole);
+            ctx.lineTo(xStart, yPole);
+            ctx.closePath();
+          } else {
+            ring.forEach(([lon, lat], i) => {
+              const [x, y] = px(lon, lat);
+              i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            });
+            ctx.closePath();
+          }
+        }
       }
       if (fill) ctx.fill('evenodd');
       if (stroke) { ctx.lineWidth = lineWidth; ctx.stroke(); }
@@ -391,8 +456,14 @@ function buildTexture(countriesGeo) {
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
+  // No mipmaps: the shader thresholds this mask, and mip averaging of
+  // land (0) with ocean (1) at the poles reads as mid-gray "shallow shelf",
+  // painting a turquoise bullseye over the polar caps.
   const waterTex = new THREE.CanvasTexture(waterMask);
   waterTex.colorSpace = THREE.NoColorSpace;
+  waterTex.generateMipmaps = false;
+  waterTex.minFilter = THREE.LinearFilter;
+  waterTex.anisotropy = 8;
   return { map: tex, waterMap: waterTex };
 }
 
