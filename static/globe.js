@@ -216,16 +216,15 @@ export function latLonToVec3(lat, lon, r) {
   );
 }
 
+// Direction of the point where the sun is overhead right now. Day side =
+// hemisphere facing this vector. Uses the same lat/lon mapping as the globe.
 function subsolarDirection(date) {
   const start = Date.UTC(date.getUTCFullYear(), 0, 0);
   const doy = (date.getTime() - start) / 86400000;
-  const decl = -23.44 * Math.cos(2 * Math.PI * (doy + 10) / 365.25) * Math.PI / 180;
+  const declDeg = -23.44 * Math.cos(2 * Math.PI * (doy + 10) / 365.25);
   const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
-  const ha = (utcHours - 12) * 15 * Math.PI / 180 + Math.PI;
-  const x = Math.cos(decl) * Math.cos(ha);
-  const y = Math.sin(decl);
-  const z = Math.cos(decl) * Math.sin(ha);
-  return new THREE.Vector3(-x, -y, -z).normalize();
+  const lonDeg = (12 - utcHours) * 15;
+  return latLonToVec3(declDeg, lonDeg, 1);
 }
 
 function ringCentroid(ring) {
