@@ -1,5 +1,5 @@
 /* Professional globe renderer: procedural basemap, atmosphere, labels, event markers. */
-console.log('[globe] renderer v17 — terminator shading fix');
+console.log('[globe] renderer v18 — soft day/night, toggle disables shading');
 import * as THREE from 'three';
 import { OrbitControls } from '/static/vendor/OrbitControls.js';
 
@@ -691,7 +691,7 @@ function buildTerminator(sunDir) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   return new THREE.Line(
     geo,
-    new THREE.LineBasicMaterial({ color: 0xc9a227, transparent: true, opacity: 0.72, depthWrite: false })
+    new THREE.LineBasicMaterial({ color: 0xc9a227, transparent: true, opacity: 0.32, depthWrite: false })
   );
 }
 
@@ -711,6 +711,7 @@ const GLOBE_FRAG = `
   uniform sampler2D waterMap;
   uniform vec3 sunDir;
   uniform vec3 cameraPos;
+  uniform float nightStrength;
   varying vec2 vUv;
   varying vec3 vNormal;
   varying vec3 vWorldPos;
@@ -720,7 +721,7 @@ const GLOBE_FRAG = `
     float isWater = smoothstep(0.14, 0.32, wm);
     vec3 N = normalize(vNormal);
     float d = dot(N, sunDir);
-    float day = smoothstep(-0.12, 0.22, d);
+    float day = smoothstep(-0.30, 0.40, d);
     vec3 viewDir = normalize(cameraPos - vWorldPos);
 
     // Night must be a dimmed, hue-consistent copy of the day color. Giving
@@ -733,18 +734,16 @@ const GLOBE_FRAG = `
     waterDay = mix(waterDay, shelfW, smoothstep(0.14, 0.45, wm) * (1.0 - smoothstep(0.14, 0.45, wm) * 0.5));
     vec3 landDay = c * vec3(1.10, 1.05, 0.98);
     vec3 dayCol = mix(landDay, waterDay, isWater);
-    vec3 col = dayCol * mix(vec3(0.26, 0.29, 0.38), vec3(1.0), day);
-
-    // Thin warm kiss right at the terminator, land only
-    float term = smoothstep(-0.06, 0.0, d) * (1.0 - smoothstep(0.0, 0.10, d));
-    col += vec3(0.10, 0.05, 0.015) * term * (1.0 - isWater);
+    // nightStrength 0 disables shading entirely (uniformly lit globe)
+    vec3 nightTint = mix(vec3(1.0), vec3(0.48, 0.52, 0.62), nightStrength);
+    vec3 col = dayCol * mix(nightTint, vec3(1.0), day);
 
     vec3 refl = reflect(-sunDir, N);
     float spec = pow(max(dot(refl, viewDir), 0.0), 36.0) * day * isWater;
-    col += vec3(0.50, 0.70, 0.90) * spec * 0.30;
+    col += vec3(0.50, 0.70, 0.90) * spec * 0.22 * max(nightStrength, 0.35);
 
     float rim = pow(1.0 - max(dot(N, viewDir), 0.0), 2.5);
-    col += vec3(0.20, 0.40, 0.60) * rim * (0.10 + 0.18 * day);
+    col += vec3(0.20, 0.40, 0.60) * rim * (0.10 + 0.18 * mix(1.0, day, nightStrength));
 
     gl_FragColor = vec4(col, 1.0);
   }`;
@@ -857,6 +856,7 @@ export class Globe {
       uniforms: {
         map: { value: map }, waterMap: { value: waterMap },
         sunDir: this.sunUniform, cameraPos: this.camUniform,
+        nightStrength: { value: this.dayNightVisible ? 1 : 0 },
       },
       vertexShader: GLOBE_VERT,
       fragmentShader: GLOBE_FRAG,
@@ -1052,6 +1052,7 @@ export class Globe {
     if (dayNight !== undefined) {
       this.dayNightVisible = dayNight;
       if (this._terminator) this._terminator.visible = dayNight;
+      if (this._globeMat) this._globeMat.uniforms.nightStrength.value = dayNight ? 1 : 0;
     }
     if (liveSun !== undefined) {
       this.liveSun = liveSun;
