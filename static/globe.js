@@ -15,23 +15,32 @@ const PALETTE = {
   ],
 };
 
-const MAJOR_COUNTRIES = new Set([
-  'United States of America', 'China', 'Russia', 'India', 'Brazil',
-  'Indonesia', 'Nigeria', 'Japan', 'Germany', 'United Kingdom',
-  'France', 'Mexico', 'Iran', 'Turkey', 'Saudi Arabia', 'Egypt',
-  'South Africa', 'Pakistan', 'Ukraine', 'Israel', 'Palestine',
-]);
+// Short display names — long names blow up sprite aspect ratio and overlap.
+const COUNTRY_LABELS = [
+  { name: 'United States of America', short: 'USA', lat: 39.8, lon: -98.5, tier: 1 },
+  { name: 'China', short: 'China', lat: 35.0, lon: 103.0, tier: 1 },
+  { name: 'Russia', short: 'Russia', lat: 61.5, lon: 95.0, tier: 1 },
+  { name: 'India', short: 'India', lat: 21.0, lon: 78.0, tier: 1 },
+  { name: 'Brazil', short: 'Brazil', lat: -10.0, lon: -55.0, tier: 1 },
+  { name: 'United Kingdom', short: 'UK', lat: 55.4, lon: -3.4, tier: 2 },
+  { name: 'France', short: 'France', lat: 46.6, lon: 2.2, tier: 2 },
+  { name: 'Germany', short: 'Germany', lat: 51.2, lon: 10.4, tier: 2 },
+  { name: 'Japan', short: 'Japan', lat: 36.2, lon: 138.3, tier: 2 },
+  { name: 'Ukraine', short: 'Ukraine', lat: 49.0, lon: 32.0, tier: 2 },
+  { name: 'Iran', short: 'Iran', lat: 32.4, lon: 53.7, tier: 3 },
+  { name: 'Turkey', short: 'Turkey', lat: 39.0, lon: 35.0, tier: 3 },
+  { name: 'Saudi Arabia', short: 'Saudi', lat: 23.9, lon: 45.1, tier: 3 },
+  { name: 'Israel', short: 'Israel', lat: 31.5, lon: 35.0, tier: 3 },
+  { name: 'Egypt', short: 'Egypt', lat: 26.8, lon: 30.8, tier: 3 },
+  { name: 'Nigeria', short: 'Nigeria', lat: 9.1, lon: 8.7, tier: 3 },
+  { name: 'South Africa', short: 'S. Africa', lat: -30.6, lon: 23.0, tier: 3 },
+  { name: 'Australia', short: 'Australia', lat: -25.3, lon: 133.8, tier: 3 },
+];
 
 const NEWS_CITIES = [
   ['Kyiv', 50.45, 30.52], ['Gaza', 31.50, 34.47], ['Moscow', 55.76, 37.62],
-  ['Beirut', 33.89, 35.50], ['Tehran', 35.69, 51.39], ['Kabul', 34.55, 69.21],
-  ['Beijing', 39.90, 116.40], ['Taipei', 25.03, 121.57], ['Seoul', 37.57, 126.98],
-  ['Tokyo', 35.68, 139.69], ['Khartoum', 15.50, 32.56], ['Nairobi', -1.29, 36.82],
-  ['Kinshasa', -4.32, 15.31], ['Lagos', 6.52, 3.38], ['Cairo', 30.04, 31.24],
-  ['Riyadh', 24.71, 46.68], ['Istanbul', 41.01, 28.98], ['London', 51.51, -0.13],
-  ['Washington', 38.91, -77.04], ['New York', 40.71, -74.01],
-  ['Port-au-Prince', 18.54, -72.34], ['Caracas', 10.49, -66.88],
-  ['Tbilisi', 41.72, 44.79], ['Damascus', 33.51, 36.29],
+  ['Tehran', 35.69, 51.39], ['Beijing', 39.90, 116.40], ['Taipei', 25.03, 121.57],
+  ['Khartoum', 15.50, 32.56], ['London', 51.51, -0.13], ['Damascus', 33.51, 36.29],
 ];
 
 export function sevColor(s) {
@@ -182,33 +191,30 @@ function buildBorders(bordersMesh) {
   );
 }
 
-function makeLabelSprite(text, fontSize, color, bgColor) {
+function makeLabelSprite(text, { fontSize = 22, color = '#c8d4e0', tier = 2, type = 'country' } = {}) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
-  ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+  const font = `500 ${fontSize}px Inter, system-ui, sans-serif`;
+  ctx.font = font;
   const tw = ctx.measureText(text).width;
-  const padX = fontSize * 0.5, padY = fontSize * 0.25;
-  canvas.width = Math.ceil(tw + padX * 2);
-  canvas.height = Math.ceil(fontSize * 1.5 + padY * 2);
-  ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+  const pad = 4;
+  canvas.width = Math.ceil(tw + pad * 2);
+  canvas.height = Math.ceil(fontSize * 1.35 + pad * 2);
+  ctx.font = font;
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
-  if (bgColor) {
-    const bw = tw + padX, bh = fontSize * 1.3 + padY;
-    ctx.fillStyle = bgColor;
-    ctx.beginPath();
-    ctx.roundRect(canvas.width / 2 - bw / 2, canvas.height / 2 - bh / 2, bw, bh, 4);
-    ctx.fill();
-  }
+  // Subtle dark outline for legibility — no bulky background boxes
+  ctx.strokeStyle = 'rgba(4, 8, 16, 0.85)';
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
+  ctx.strokeText(text, canvas.width / 2, canvas.height / 2);
   ctx.fillStyle = color;
   ctx.fillText(text, canvas.width / 2, canvas.height / 2);
   const tex = new THREE.CanvasTexture(canvas);
   tex.minFilter = THREE.LinearFilter;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false });
   const sprite = new THREE.Sprite(mat);
-  const aspect = canvas.width / canvas.height;
-  const h = 0.07;
-  sprite.scale.set(h * aspect, h, 1);
+  sprite.userData = { type, tier, aspect: canvas.width / canvas.height };
   return sprite;
 }
 
@@ -406,35 +412,42 @@ export class Globe {
       color: 0x8899bb, size: 0.05, sizeAttenuation: true, transparent: true, opacity: 0.7,
     })));
 
-    this._buildLabels(countries);
+    this._buildLabels();
     this.scene.add(this.labels);
     this.scene.add(this.markers);
     this._clock = new THREE.Clock();
     this.renderer.setAnimationLoop(() => this._tick());
   }
 
-  _buildLabels(countries) {
-    const dist = this.camera.position.length();
-    const zoom = dist / 1.0;
-
-    for (const f of countries.features) {
-      const name = f.properties?.name;
-      if (!name || !MAJOR_COUNTRIES.has(name)) continue;
-      const [lat, lon] = featureCentroid(f);
-      const sprite = makeLabelSprite(name.toUpperCase(), 52, '#ffffff', 'rgba(6, 12, 28, 0.72)');
-      sprite.position.copy(latLonToVec3(lat, lon, 1.045));
-      sprite.userData = { type: 'country', baseH: 0.085 };
+  _buildLabels() {
+    for (const c of COUNTRY_LABELS) {
+      const sprite = makeLabelSprite(c.short, {
+        fontSize: c.tier === 1 ? 24 : 20,
+        color: c.tier === 1 ? '#e8eef4' : '#9aa8b8',
+        tier: c.tier,
+        type: 'country',
+      });
+      sprite.position.copy(latLonToVec3(c.lat, c.lon, 1.018));
       this.labels.add(sprite);
     }
-
-    if (zoom < 2.2) {
-      for (const [name, lat, lon] of NEWS_CITIES) {
-        const sprite = makeLabelSprite(name, 40, '#8aa0b8', null);
-        sprite.position.copy(latLonToVec3(lat, lon, 1.03));
-        sprite.userData = { type: 'city', baseH: 0.055 };
-        this.labels.add(sprite);
-      }
+    for (const [name, lat, lon] of NEWS_CITIES) {
+      const sprite = makeLabelSprite(name, { fontSize: 18, color: '#7a8a9a', tier: 4, type: 'city' });
+      sprite.position.copy(latLonToVec3(lat, lon, 1.014));
+      this.labels.add(sprite);
     }
+  }
+
+  _labelScale(dist) {
+    // Shrink labels when camera pulls back; cap so they never dominate the globe
+    const ref = 2.8;
+    return Math.min(0.028, 0.010 * (ref / dist));
+  }
+
+  _labelTierVisible(tier, dist) {
+    if (tier === 1) return true;
+    if (tier === 2) return dist < 2.6;
+    if (tier === 3) return dist < 2.1;
+    return dist < 1.75; // cities
   }
 
   setLabelsVisible(v) {
@@ -541,13 +554,18 @@ export class Globe {
     }
 
     if (this.labelsVisible) {
-      const lz = Math.max(0.3, Math.min(2.5, this.camera.position.length() / 1.6));
+      const dist = this.camera.position.length();
+      const h = this._labelScale(dist);
+      const camDir = this.camera.position.clone().normalize();
       for (const s of this.labels.children) {
-        const bh = s.userData.baseH || 0.07;
-        const aspect = s.material.map.image.width / s.material.map.image.height;
-        s.scale.set(bh * aspect * lz, bh * lz, 1);
-        const normal = s.position.clone().normalize();
-        s.material.opacity = Math.max(0, normal.dot(this.camera.position.clone().normalize()) * 0.5 + 0.5);
+        const tier = s.userData.tier || 3;
+        const facing = s.position.clone().normalize().dot(camDir);
+        const show = this._labelTierVisible(tier, dist) && facing > 0.15;
+        s.visible = show;
+        if (!show) continue;
+        const aspect = s.userData.aspect || 1;
+        s.scale.set(h * aspect, h, 1);
+        s.material.opacity = Math.min(1, Math.max(0.25, facing * 1.1));
       }
     }
 
