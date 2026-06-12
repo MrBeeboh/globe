@@ -113,10 +113,15 @@
   </div>
 </aside>
 
+<aside id="layer-panel">
+  <div class="layer-head">
+    <span class="panel-title">Layers</span>
+    <span class="layer-hint">Osiris-style intel overlays</span>
+  </div>
+  <div id="layer-list"></div>
+</aside>
+
 <div id="hud">
-  <button id="labels-toggle" class="hud-btn active" title="Toggle map labels">
-    <span class="pill-dot"></span> Labels
-  </button>
   <div id="legend">
     <div class="legend-title">Severity</div>
     <div class="legend-items">
@@ -124,7 +129,26 @@
       <span class="leg-item"><i class="swatch med"></i> Medium</span>
       <span class="leg-item"><i class="swatch high"></i> High</span>
     </div>
-    <div class="legend-hint">Drag to rotate · Scroll to zoom · Click marker for detail</div>
+    <div class="legend-hint">Drag to rotate · Scroll to zoom · <kbd>?</kbd> shortcuts</div>
+  </div>
+</div>
+
+<div id="ticker-bar">
+  <div class="ticker-label">LIVE</div>
+  <div class="ticker-track">
+    <div id="ticker-content" class="ticker-content"></div>
+  </div>
+</div>
+
+<div id="shortcuts-modal" hidden>
+  <div class="shortcuts-backdrop"></div>
+  <div class="shortcuts-card">
+    <header>
+      <span class="panel-title">Keyboard Shortcuts</span>
+      <button id="shortcuts-close" aria-label="Close">×</button>
+    </header>
+    <dl id="shortcuts-list"></dl>
+    <p class="shortcuts-foot">Press <kbd>?</kbd> or <kbd>Esc</kbd> to close</p>
   </div>
 </div>
 

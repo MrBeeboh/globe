@@ -7,25 +7,65 @@ const CAT_LABELS = {
   diplomacy: 'Diplomacy', disaster: 'Disaster', hazard: 'Hazard', other: 'Other',
 };
 const CHANNEL_LABELS = { gdelt: 'GDELT', usgs: 'USGS', gdacs: 'GDACS', rss: 'RSS', sample: 'Sample' };
+const ZONE_SEV_LABELS = { war: 'Active War', high: 'High Tension', elevated: 'Elevated' };
 const REFRESH_SEC = 60;
+
+const LAYERS = [
+  { key: 'events', label: 'Events', color: '#c44038' },
+  { key: 'zones', label: 'Conflict Zones', color: '#d4882a' },
+  { key: 'heatmap', label: 'Event Heatmap', color: '#b58a3a' },
+  { key: 'labels', label: 'Country Labels', color: '#c9a227' },
+  { key: 'dayNight', label: 'Day / Night Line', color: '#7a9472' },
+  { key: 'liveSun', label: 'Live Sun Position', color: '#9a948c' },
+  { key: 'autoRotate', label: 'Auto Rotate', color: '#7a756e' },
+];
+
+const SHORTCUTS = [
+  ['/', 'Focus search'],
+  ['r', 'Refresh all feeds'],
+  ['j / k', 'Next / previous event'],
+  ['l', 'Toggle labels'],
+  ['c', 'Toggle conflict zones'],
+  ['h', 'Toggle heatmap'],
+  ['d', 'Toggle day/night line'],
+  ['a', 'Toggle auto-rotate'],
+  ['?', 'Show shortcuts'],
+  ['Esc', 'Close panels'],
+];
 
 const state = {
   events: [],
+  conflictZones: [],
   cats: new Set(CATEGORIES),
   minSev: 0,
   sinceHours: 72,
   q: '',
   selectedId: null,
+  selectedZoneId: null,
   mode: 'connecting',
   feedIdx: -1,
+  layers: {
+    events: true, zones: true, heatmap: false, labels: true,
+    dayNight: true, liveSun: true, autoRotate: true,
+  },
 };
 
 const $ = (id) => document.getElementById(id);
 const tooltip = $('tooltip');
 
+function placeTooltip(x, y) {
+  const r = tooltip.getBoundingClientRect();
+  tooltip.style.left = Math.min(x + 16, innerWidth - r.width - 12) + 'px';
+  tooltip.style.top = Math.min(y + 16, innerHeight - r.height - 12) + 'px';
+}
+
 const globe = new Globe($('scene'), {
   onHover(ev, x, y) {
-    if (!ev) { tooltip.classList.remove('visible'); return; }
+    if (!ev) {
+      if (!state._zoneHover) tooltip.classList.remove('visible', 'zone-tip');
+      return;
+    }
+    tooltip.classList.remove('zone-tip');
     tooltip.querySelector('.tt-badges').innerHTML =
       `<span class="badge cat-${ev.category}">${esc(CAT_LABELS[ev.category] || ev.category)}</span>` +
       `<span class="badge channel">${esc(CHANNEL_LABELS[ev.channel] || ev.channel)}</span>`;
@@ -33,11 +73,23 @@ const globe = new Globe($('scene'), {
     tooltip.querySelector('.tt-meta').textContent =
       `${timeAgo(ev.ts)} · ${sevLabel(ev.severity)} · ${ev.place || ev.country || 'Unknown'}`;
     tooltip.classList.add('visible');
-    const r = tooltip.getBoundingClientRect();
-    tooltip.style.left = Math.min(x + 16, innerWidth - r.width - 12) + 'px';
-    tooltip.style.top = Math.min(y + 16, innerHeight - r.height - 12) + 'px';
+    placeTooltip(x, y);
   },
-  onSelect(ev) { select(ev, { fly: false }); },
+  onZoneHover(zone, x, y) {
+    state._zoneHover = zone;
+    if (!zone) {
+      if (!state._eventHover) tooltip.classList.remove('visible', 'zone-tip');
+      return;
+    }
+    tooltip.classList.add('zone-tip', 'visible');
+    tooltip.querySelector('.tt-badges').innerHTML =
+      `<span class="badge channel">${esc(ZONE_SEV_LABELS[zone.severity] || zone.severity)}</span>`;
+    tooltip.querySelector('.tt-title').textContent = zone.label;
+    tooltip.querySelector('.tt-meta').textContent = zone.description || '';
+    placeTooltip(x, y);
+  },
+  onSelect(ev) { selectEvent(ev, { fly: false }); },
+  onZoneSelect(zone) { selectZone(zone, { fly: false }); },
 });
 
 function esc(s) {
@@ -124,6 +176,104 @@ async function loadSamples() {
   } catch { state.events = []; }
 }
 
+function buildHeatmap(evs) {
+  const cells = new Map();
+  for (const ev of evs) {
+    const lat = Math.round(ev.lat * 2) / 2;
+    const lon = Math.round(ev.lon * 2) / 2;
+    const key = `${lat},${lon}`;
+    const cur = cells.get(key) || { lat, lon, count: 0, sev: 0 };
+    cur.count += 1;
+    cur.sev += ev.severity;
+    cells.set(key, cur);
+  }
+  const max = Math.max(1, ...[...cells.values()].map((c) => c.count));
+  return [...cells.values()].map((c) => ({
+    lat: c.lat, lon: c.lon,
+    intensity: (c.count / max) * 0.65 + (c.sev / c.count) * 0.35,
+  }));
+}
+
+function applyLayers() {
+  globe.setLayers({
+    events: state.layers.events,
+    zones: state.layers.zones,
+    heatmap: state.layers.heatmap,
+    labels: state.layers.labels,
+    dayNight: state.layers.dayNight,
+    liveSun: state.layers.liveSun,
+    autoRotate: state.layers.autoRotate,
+  });
+}
+
+function toggleLayer(key) {
+  state.layers[key] = !state.layers[key];
+  applyLayers();
+  renderLayerPanel();
+}
+
+function layerCounts() {
+  const evs = visibleEvents();
+  return {
+    events: evs.length,
+    zones: state.conflictZones.length,
+    heatmap: buildHeatmap(evs).length,
+    labels: '—',
+    dayNight: '—',
+    liveSun: '—',
+    autoRotate: '—',
+  };
+}
+
+function renderLayerPanel() {
+  const el = $('layer-list');
+  if (!el) return;
+  const counts = layerCounts();
+  el.innerHTML = '';
+  for (const layer of LAYERS) {
+    const btn = document.createElement('button');
+    btn.className = 'layer-btn' + (state.layers[layer.key] ? ' on' : '');
+    btn.innerHTML =
+      `<span class="layer-dot" style="color:${layer.color}"></span>` +
+      `<span class="layer-name">${layer.label}</span>` +
+      `<span class="layer-count">${counts[layer.key]}</span>`;
+    btn.onclick = () => toggleLayer(layer.key);
+    el.appendChild(btn);
+  }
+}
+
+function renderTicker(evs) {
+  const el = $('ticker-content');
+  if (!el) return;
+  const items = [...evs]
+    .sort((a, b) => b.severity - a.severity || Date.parse(b.ts) - Date.parse(a.ts))
+    .slice(0, 20);
+  if (!items.length) {
+    el.innerHTML = '<span class="ticker-item"><span class="t-title">Awaiting intelligence…</span></span>';
+    return;
+  }
+  const html = items.map((ev) =>
+    `<span class="ticker-item">` +
+      `<span class="t-sev" style="background:${sevColor(ev.severity)}"></span>` +
+      `<span class="t-cat">${esc(CAT_LABELS[ev.category])}</span>` +
+      `<span class="t-title">${esc(ev.title)}</span>` +
+      `<span class="t-cat">${timeAgo(ev.ts)}</span>` +
+    `</span>`
+  ).join('');
+  el.innerHTML = html + html;
+}
+
+function renderShortcuts() {
+  const el = $('shortcuts-list');
+  if (!el) return;
+  el.innerHTML = SHORTCUTS.map(([k, d]) =>
+    `<dt><kbd>${esc(k)}</kbd></dt><dd>${esc(d)}</dd>`
+  ).join('');
+}
+
+function openShortcuts() { $('shortcuts-modal').hidden = false; }
+function closeShortcuts() { $('shortcuts-modal').hidden = true; }
+
 function visibleEvents() {
   const q = state.q.toLowerCase();
   return state.events.filter((e) => {
@@ -143,8 +293,11 @@ function visibleEvents() {
 function render() {
   const evs = visibleEvents();
   globe.setEvents(evs);
+  globe.setHeatmap(buildHeatmap(evs));
   renderFeed(evs);
   renderChips();
+  renderLayerPanel();
+  renderTicker(evs);
   $('stat-count').textContent = evs.length.toLocaleString();
   $('feed-count').textContent = evs.length.toLocaleString();
   $('stat-window').textContent = state.sinceHours >= 24 ? `${state.sinceHours / 24}d` : `${state.sinceHours}h`;
@@ -178,7 +331,7 @@ function renderFeed(evs) {
       `</div>` +
       `<div class="title">${esc(ev.title)}</div>` +
       (ev.place ? `<div class="place">${pinIcon}${esc(ev.place)}</div>` : '');
-    el.onclick = () => select(ev, { fly: true });
+    el.onclick = () => selectEvent(ev, { fly: true });
     frag.appendChild(el);
   }
   feed.appendChild(frag);
@@ -220,8 +373,9 @@ function renderIngest(channels) {
   }
 }
 
-function select(ev, { fly }) {
+function selectEvent(ev, { fly }) {
   state.selectedId = ev.id;
+  state.selectedZoneId = null;
   state.feedIdx = visibleEvents().findIndex((e) => e.id === ev.id);
   globe.setSelected(ev.id);
   if (fly) globe.flyTo(ev.lat, ev.lon);
@@ -236,6 +390,7 @@ function select(ev, { fly }) {
   $('detail-sev-text').textContent = `${sevLabel(ev.severity)} (${ev.severity.toFixed(2)})`;
   $('detail-sev').innerHTML =
     `<i style="width:${(ev.severity * 100).toFixed(0)}%;background:${sevColor(ev.severity)}"></i>`;
+  document.querySelector('.sevbar-wrap').style.display = '';
 
   const kv = $('detail-kv');
   kv.innerHTML = '';
@@ -252,6 +407,7 @@ function select(ev, { fly }) {
   }
 
   const link = $('detail-link');
+  link.innerHTML = 'Read source article <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 12L12 4M7 4h5v5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   if (ev.url) { link.href = ev.url; link.style.display = 'inline-flex'; }
   else link.style.display = 'none';
 
@@ -261,9 +417,47 @@ function select(ev, { fly }) {
   if (item) { item.classList.add('selected'); item.scrollIntoView({ block: 'nearest' }); }
 }
 
+function selectZone(zone, { fly }) {
+  state.selectedZoneId = zone.id;
+  state.selectedId = null;
+  state.feedIdx = -1;
+  globe.setSelected(null);
+  if (fly) globe.flyTo(zone.lat, zone.lon);
+
+  $('detail-badges').innerHTML =
+    `<span class="badge channel">Conflict Zone</span>` +
+    `<span class="badge channel">${esc(ZONE_SEV_LABELS[zone.severity] || zone.severity)}</span>`;
+
+  $('detail-title').textContent = zone.label;
+  $('detail-summary').textContent = zone.description || 'Monitored tension zone.';
+  document.querySelector('.sevbar-wrap').style.display = 'none';
+
+  const kv = $('detail-kv');
+  kv.innerHTML = '';
+  const rows = [
+    ['Coordinates', `${zone.lat.toFixed(2)}°, ${zone.lon.toFixed(2)}°`],
+    ['Severity', ZONE_SEV_LABELS[zone.severity] || zone.severity],
+    ['Type', 'Static OSINT overlay'],
+  ];
+  for (const [k, v] of rows) {
+    kv.insertAdjacentHTML('beforeend', `<dt>${k}</dt><dd>${esc(v)}</dd>`);
+  }
+
+  const link = $('detail-link');
+  if (zone.url) {
+    link.href = zone.url;
+    link.innerHTML = 'Open live map <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 12L12 4M7 4h5v5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    link.style.display = 'inline-flex';
+  } else link.style.display = 'none';
+
+  $('detail').classList.add('open');
+  document.querySelectorAll('.feed-item').forEach((el) => el.classList.remove('selected'));
+}
+
 function closeDetail() {
   $('detail').classList.remove('open');
   state.selectedId = null;
+  state.selectedZoneId = null;
   state.feedIdx = -1;
   globe.setSelected(null);
   document.querySelectorAll('.feed-item').forEach((el) => el.classList.remove('selected'));
@@ -300,11 +494,9 @@ $('sel-sev').onchange = (e) => {
   else render();
 };
 
-$('labels-toggle').onclick = (e) => {
-  const btn = e.currentTarget;
-  const on = btn.classList.toggle('active');
-  globe.setLabelsVisible(on);
-};
+$('shortcuts-close').onclick = closeShortcuts;
+$('shortcuts-modal').querySelector('.shortcuts-backdrop').onclick = closeShortcuts;
+renderShortcuts();
 
 let searchTimer;
 let refreshCountdown = REFRESH_SEC;
@@ -360,25 +552,38 @@ function tickRefresh() {
 
 $('refresh-now').onclick = forceRefresh;
 
+function inInput() {
+  const tag = document.activeElement?.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { closeDetail(); return; }
-  if (e.key === '/' && document.activeElement !== $('search')) {
-    e.preventDefault(); $('search').focus(); return;
+  if (e.key === 'Escape') { closeShortcuts(); closeDetail(); return; }
+  if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+    if (!inInput()) { e.preventDefault(); openShortcuts(); }
+    return;
   }
-  if (e.key === 'r' && document.activeElement !== $('search') && !e.ctrlKey && !e.metaKey) {
-    forceRefresh(); return;
-  }
+  if (inInput()) return;
+
+  if (e.key === '/') { e.preventDefault(); $('search').focus(); return; }
+  if (e.key === 'r' && !e.ctrlKey && !e.metaKey) { forceRefresh(); return; }
+  if (e.key === 'l') { toggleLayer('labels'); return; }
+  if (e.key === 'c') { toggleLayer('zones'); return; }
+  if (e.key === 'h') { toggleLayer('heatmap'); return; }
+  if (e.key === 'd') { toggleLayer('dayNight'); return; }
+  if (e.key === 'a') { toggleLayer('autoRotate'); return; }
+
   const evs = visibleEvents();
   if (!evs.length) return;
   if (e.key === 'j' || e.key === 'ArrowDown') {
     e.preventDefault();
     const next = Math.min(state.feedIdx + 1, evs.length - 1);
-    select(evs[next], { fly: true });
+    selectEvent(evs[next], { fly: true });
   }
   if (e.key === 'k' || e.key === 'ArrowUp') {
     e.preventDefault();
     const prev = Math.max(state.feedIdx - 1, 0);
-    select(evs[prev], { fly: true });
+    selectEvent(evs[prev], { fly: true });
   }
 });
 
@@ -391,6 +596,17 @@ document.addEventListener('keydown', (e) => {
 
   setLoaderStep('Loading cartography…');
   await globe.init();
+
+  setLoaderStep('Loading conflict zones…');
+  try {
+    const zr = await fetch('/data/conflict-zones.json');
+    const zd = await zr.json();
+    state.conflictZones = zd.zones || [];
+    globe.setConflictZones(state.conflictZones);
+  } catch { /* optional layer */ }
+
+  applyLayers();
+  renderLayerPanel();
 
   setLoaderStep('Fetching live events…');
   await Promise.all([fetchEvents(), fetchStats()]);

@@ -107,6 +107,8 @@ export function sevColor(s) {
   return '#b58a3a';
 }
 
+const ZONE_COLORS = { war: '#c44038', high: '#d4882a', elevated: '#b58a3a' };
+
 export function latLonToVec3(lat, lon, r) {
   const phi = (90 - lat) * Math.PI / 180;
   const theta = (lon + 180) * Math.PI / 180;
@@ -401,6 +403,58 @@ function createMarker(ev) {
   return group;
 }
 
+function createZoneMarker(zone) {
+  const group = new THREE.Group();
+  const hex = ZONE_COLORS[zone.severity] || ZONE_COLORS.elevated;
+  const color = new THREE.Color(hex);
+  const base = zone.severity === 'war' ? 0.018 : zone.severity === 'high' ? 0.015 : 0.012;
+
+  const glowMat = new THREE.SpriteMaterial({
+    map: glowTexture(hex), transparent: true, opacity: 0.7,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const glow = new THREE.Sprite(glowMat);
+  glow.scale.set(base * 5, base * 5, 1);
+  group.add(glow);
+
+  const diamond = new THREE.Mesh(
+    new THREE.CircleGeometry(base * 0.75, 4),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false })
+  );
+  diamond.rotation.z = Math.PI / 4;
+  group.add(diamond);
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(base * 1.1, base * 1.35, 20),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false })
+  );
+  group.add(ring);
+
+  group.userData.zone = zone;
+  group.userData.base = base;
+  group.userData.phase = Math.random() * Math.PI * 2;
+  return group;
+}
+
+function buildTerminator(sunDir) {
+  const n = sunDir.clone().normalize();
+  const ref = Math.abs(n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  const u = new THREE.Vector3().crossVectors(n, ref).normalize();
+  const v = new THREE.Vector3().crossVectors(n, u).normalize();
+  const positions = [];
+  for (let i = 0; i <= 160; i++) {
+    const a = (i / 160) * Math.PI * 2;
+    const p = u.clone().multiplyScalar(Math.cos(a)).add(v.clone().multiplyScalar(Math.sin(a))).multiplyScalar(1.006);
+    positions.push(p.x, p.y, p.z);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  return new THREE.Line(
+    geo,
+    new THREE.LineBasicMaterial({ color: 0xc9a227, transparent: true, opacity: 0.55, depthWrite: false })
+  );
+}
+
 const GLOBE_VERT = `
   varying vec2 vUv;
   varying vec3 vNormal;
@@ -482,17 +536,28 @@ const ATMOS_FRAG = `
   }`;
 
 export class Globe {
-  constructor(container, { onHover, onSelect } = {}) {
+  constructor(container, { onHover, onSelect, onZoneHover, onZoneSelect } = {}) {
     this.container = container;
     this.onHover = onHover || (() => {});
     this.onSelect = onSelect || (() => {});
+    this.onZoneHover = onZoneHover || (() => {});
+    this.onZoneSelect = onZoneSelect || (() => {});
     this.markers = new THREE.Group();
+    this.zones = new THREE.Group();
+    this.heatmap = new THREE.Group();
     this.labels = new THREE.Group();
     this._labelIndex = new Map();
     this._eventCountries = new Set();
     this._proj = new THREE.Vector3();
     this.selectedId = null;
     this.labelsVisible = true;
+    this.eventsVisible = true;
+    this.zonesVisible = true;
+    this.heatmapVisible = false;
+    this.dayNightVisible = true;
+    this.liveSun = true;
+    this._frozenSun = subsolarDirection(new Date());
+    this._terminator = null;
     this._flyAnim = null;
     this._selRing = null;
 
@@ -573,10 +638,85 @@ export class Globe {
     })));
 
     this._buildLabels(countries);
+    this._terminator = buildTerminator(this.sunUniform.value);
+    this.scene.add(this._terminator);
     this.scene.add(this.labels);
+    this.scene.add(this.heatmap);
+    this.scene.add(this.zones);
     this.scene.add(this.markers);
     this._clock = new THREE.Clock();
     this.renderer.setAnimationLoop(() => this._tick());
+  }
+
+  setConflictZones(zones) {
+    for (const child of [...this.zones.children]) {
+      child.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+          if (o.material.map) o.material.map.dispose();
+          o.material.dispose();
+        }
+      });
+      this.zones.remove(child);
+    }
+    for (const zone of zones) {
+      const group = createZoneMarker(zone);
+      const pos = latLonToVec3(zone.lat, zone.lon, 1.007);
+      group.position.copy(pos);
+      group.lookAt(pos.clone().multiplyScalar(2));
+      group.renderOrder = 1;
+      this.zones.add(group);
+    }
+  }
+
+  setHeatmap(points) {
+    for (const child of [...this.heatmap.children]) {
+      child.geometry.dispose();
+      child.material.dispose();
+      this.heatmap.remove(child);
+    }
+    for (const p of points) {
+      const t = Math.min(1, p.intensity);
+      const radius = 0.012 + t * 0.05;
+      const col = new THREE.Color(sevColor(0.35 + t * 0.55));
+      const mesh = new THREE.Mesh(
+        new THREE.CircleGeometry(radius, 20),
+        new THREE.MeshBasicMaterial({
+          color: col, transparent: true, opacity: 0.12 + t * 0.28,
+          depthWrite: false, blending: THREE.AdditiveBlending,
+        })
+      );
+      const pos = latLonToVec3(p.lat, p.lon, 1.004);
+      mesh.position.copy(pos);
+      mesh.lookAt(pos.clone().multiplyScalar(2));
+      mesh.renderOrder = 0;
+      this.heatmap.add(mesh);
+    }
+  }
+
+  setLayers({ events, zones, heatmap, labels, dayNight, liveSun, autoRotate } = {}) {
+    if (events !== undefined) {
+      this.eventsVisible = events;
+      this.markers.visible = events;
+    }
+    if (zones !== undefined) {
+      this.zonesVisible = zones;
+      this.zones.visible = zones;
+    }
+    if (heatmap !== undefined) {
+      this.heatmapVisible = heatmap;
+      this.heatmap.visible = heatmap;
+    }
+    if (labels !== undefined) this.setLabelsVisible(labels);
+    if (dayNight !== undefined) {
+      this.dayNightVisible = dayNight;
+      if (this._terminator) this._terminator.visible = dayNight;
+    }
+    if (liveSun !== undefined) {
+      this.liveSun = liveSun;
+      if (!liveSun) this._frozenSun = subsolarDirection(new Date());
+    }
+    if (autoRotate !== undefined) this.controls.autoRotate = autoRotate;
   }
 
   _buildLabels(countriesGeo) {
@@ -720,12 +860,37 @@ export class Globe {
       if (t >= 1) this._flyAnim = null;
     }
     this.controls.update();
-    const sun = subsolarDirection(new Date());
-    this.sunUniform && (this.sunUniform.value = sun);
+    const sun = this.liveSun ? subsolarDirection(new Date()) : this._frozenSun;
+    if (this.sunUniform) this.sunUniform.value = sun;
+    if (this._terminator) {
+      const n = sun.clone().normalize();
+      const ref = Math.abs(n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+      const u = new THREE.Vector3().crossVectors(n, ref).normalize();
+      const v = new THREE.Vector3().crossVectors(n, u).normalize();
+      const pos = this._terminator.geometry.attributes.position;
+      for (let i = 0; i <= 160; i++) {
+        const a = (i / 160) * Math.PI * 2;
+        const p = u.clone().multiplyScalar(Math.cos(a)).add(v.clone().multiplyScalar(Math.sin(a))).multiplyScalar(1.006);
+        pos.setXYZ(i, p.x, p.y, p.z);
+      }
+      pos.needsUpdate = true;
+      this._terminator.visible = this.dayNightVisible;
+    }
     this.camUniform && this.camUniform.value.copy(this.camera.position);
 
     const zoomScale = Math.min(Math.max((this.camera.position.length() - 1) / 1.8, 0.15), 1);
     const t = this._clock.getElapsedTime();
+
+    for (const g of this.zones.children) {
+      if (!g.userData.zone) continue;
+      g.scale.setScalar(zoomScale);
+      const phase = t * 1.6 + g.userData.phase;
+      const ring = g.children[2];
+      if (ring?.material) {
+        ring.material.opacity = 0.35 + Math.sin(phase) * 0.25;
+        ring.scale.setScalar(1 + Math.sin(phase) * 0.35);
+      }
+    }
 
     for (const g of this.markers.children) {
       if (!g.userData.event) continue;
@@ -793,27 +958,39 @@ export class Globe {
     this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hits = this.raycaster.intersectObjects(this.markers.children, true);
-    for (const h of hits) {
-      let o = h.object;
-      while (o && !o.userData.event) o = o.parent;
-      if (o?.userData.event) return o.userData.event;
+    const order = [
+      { children: this.markers.children, key: 'event', visible: this.eventsVisible },
+      { children: this.zones.children, key: 'zone', visible: this.zonesVisible },
+    ];
+    for (const { children, key, visible } of order) {
+      if (!visible || !children.length) continue;
+      const hits = this.raycaster.intersectObjects(children, true);
+      for (const h of hits) {
+        let o = h.object;
+        while (o && !o.userData[key]) o = o.parent;
+        if (o?.userData[key]) return { type: key, data: o.userData[key] };
+      }
     }
     return null;
   }
 
   _onPointerMove(e) {
-    const ev = this._pick(e);
+    const hit = this._pick(e);
+    const ev = hit?.type === 'event' ? hit.data : null;
+    const zone = hit?.type === 'zone' ? hit.data : null;
     if (ev !== this._hovered) {
       this._hovered = ev;
-      this.renderer.domElement.style.cursor = ev ? 'pointer' : 'grab';
+      this.renderer.domElement.style.cursor = hit ? 'pointer' : 'grab';
     }
     this.onHover(ev, e.clientX, e.clientY);
+    this.onZoneHover(zone, e.clientX, e.clientY);
   }
 
   _onClick(e) {
-    const ev = this._pick(e);
-    if (ev) this.onSelect(ev);
+    const hit = this._pick(e);
+    if (!hit) return;
+    if (hit.type === 'event') this.onSelect(hit.data);
+    else if (hit.type === 'zone') this.onZoneSelect(hit.data);
   }
 
   _resize() {
