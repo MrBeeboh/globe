@@ -160,6 +160,41 @@ function eventDotTexture(category, high = false) {
   return tex;
 }
 
+function intelDotTexture(hex, shape = 'circle') {
+  const key = `intel:${hex}:${shape}`;
+  if (_symTexCache.has(key)) return _symTexCache.get(key);
+  const canvas = document.createElement('canvas');
+  canvas.width = 20;
+  canvas.height = 20;
+  const ctx = canvas.getContext('2d');
+  const cx = 10, cy = 10;
+  ctx.fillStyle = hex;
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1;
+  if (shape === 'diamond') {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 6);
+    ctx.lineTo(cx + 6, cy);
+    ctx.lineTo(cx, cy + 6);
+    ctx.lineTo(cx - 6, cy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else if (shape === 'square') {
+    ctx.fillRect(cx - 5, cy - 5, 10, 10);
+    ctx.strokeRect(cx - 5, cy - 5, 10, 10);
+  } else {
+    ctx.beginPath();
+    ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  _symTexCache.set(key, tex);
+  return tex;
+}
+
 function zoneOutlineTexture(severity) {
   const key = `zone:${severity}`;
   if (_symTexCache.has(key)) return _symTexCache.get(key);
@@ -592,6 +627,9 @@ export class Globe {
     this.markers = new THREE.Group();
     this.zones = new THREE.Group();
     this.heatmap = new THREE.Group();
+    this.flights = new THREE.Group();
+    this.fires = new THREE.Group();
+    this.satellites = new THREE.Group();
     this.labels = new THREE.Group();
     this._labelIndex = new Map();
     this._eventCountries = new Set();
@@ -601,6 +639,13 @@ export class Globe {
     this.eventsVisible = true;
     this.zonesVisible = true;
     this.heatmapVisible = false;
+    this.flightsVisible = false;
+    this.firesVisible = false;
+    this.satellitesVisible = false;
+    this.photoEarth = false;
+    this._globeMat = null;
+    this._proceduralMap = null;
+    this._proceduralWater = null;
     this.dayNightVisible = true;
     this.liveSun = true;
     this._frozenSun = subsolarDirection(new Date());
@@ -652,7 +697,9 @@ export class Globe {
     this.sunUniform = { value: subsolarDirection(new Date()) };
     this.camUniform = { value: this.camera.position.clone() };
     const { map, waterMap } = buildTexture(countries);
-    const globeMat = new THREE.ShaderMaterial({
+    this._proceduralMap = map;
+    this._proceduralWater = waterMap;
+    this._globeMat = new THREE.ShaderMaterial({
       uniforms: {
         map: { value: map }, waterMap: { value: waterMap },
         sunDir: this.sunUniform, cameraPos: this.camUniform,
@@ -660,7 +707,21 @@ export class Globe {
       vertexShader: GLOBE_VERT,
       fragmentShader: GLOBE_FRAG,
     });
-    this.scene.add(new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), globeMat));
+    this._globeMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), this._globeMat);
+    this.scene.add(this._globeMesh);
+
+    // Offline photo earth (bundled 2K texture)
+    try {
+      const loader = new THREE.TextureLoader();
+      const photo = await new Promise((resolve, reject) => {
+        loader.load('/data/textures/earth-day-2k.jpg', resolve, undefined, reject);
+      });
+      photo.colorSpace = THREE.SRGBColorSpace;
+      photo.anisotropy = 8;
+      this._photoMap = photo;
+    } catch {
+      this._photoMap = null;
+    }
 
     const atmosMat = new THREE.ShaderMaterial({
       uniforms: { sunDir: this.sunUniform, cameraPos: this.camUniform },
@@ -689,6 +750,9 @@ export class Globe {
     this.scene.add(this._terminator);
     this.scene.add(this.labels);
     this.scene.add(this.heatmap);
+    this.scene.add(this.fires);
+    this.scene.add(this.flights);
+    this.scene.add(this.satellites);
     this.scene.add(this.zones);
     this.scene.add(this.markers);
     this._clock = new THREE.Clock();
@@ -739,7 +803,45 @@ export class Globe {
     }
   }
 
-  setLayers({ events, zones, heatmap, labels, dayNight, liveSun, autoRotate } = {}) {
+  setPhotoEarth(on) {
+    this.photoEarth = !!on;
+    if (!this._globeMat) return;
+    const map = (on && this._photoMap) ? this._photoMap : this._proceduralMap;
+    if (map) this._globeMat.uniforms.map.value = map;
+  }
+
+  _setIntelGroup(group, items, { color, shape, r = 1.003, size = 0.006 }) {
+    for (const child of [...group.children]) {
+      if (child.material?.map) child.material.map.dispose();
+      child.material?.dispose();
+      group.remove(child);
+    }
+    const tex = intelDotTexture(color, shape);
+    for (const item of items) {
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex, transparent: true, depthWrite: false, color: 0xffffff,
+      }));
+      sprite.scale.set(size, size, 1);
+      sprite.position.copy(latLonToVec3(item.lat, item.lon, r));
+      sprite.userData.intel = item;
+      group.add(sprite);
+    }
+  }
+
+  setFlights(items) {
+    this._setIntelGroup(this.flights, items, { color: '#38b0d8', shape: 'diamond', size: 0.005 });
+  }
+
+  setFires(items) {
+    this._setIntelGroup(this.fires, items, { color: '#ff6020', shape: 'circle', size: 0.007 });
+  }
+
+  setSatellites(items) {
+    this._setIntelGroup(this.satellites, items, { color: '#e8e040', shape: 'square', size: 0.009 });
+  }
+
+  setLayers({ events, zones, heatmap, flights, fires, satellites, photoEarth,
+                labels, dayNight, liveSun, autoRotate } = {}) {
     if (events !== undefined) {
       this.eventsVisible = events;
       this.markers.visible = events;
@@ -752,6 +854,19 @@ export class Globe {
       this.heatmapVisible = heatmap;
       this.heatmap.visible = heatmap;
     }
+    if (flights !== undefined) {
+      this.flightsVisible = flights;
+      this.flights.visible = flights;
+    }
+    if (fires !== undefined) {
+      this.firesVisible = fires;
+      this.fires.visible = fires;
+    }
+    if (satellites !== undefined) {
+      this.satellitesVisible = satellites;
+      this.satellites.visible = satellites;
+    }
+    if (photoEarth !== undefined) this.setPhotoEarth(photoEarth);
     if (labels !== undefined) this.setLabelsVisible(labels);
     if (dayNight !== undefined) {
       this.dayNightVisible = dayNight;

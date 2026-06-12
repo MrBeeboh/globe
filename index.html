@@ -53,6 +53,7 @@
 
 <aside id="feed-panel">
   <div class="panel-head">
+    <button id="feed-collapse" class="icon-btn" title="Collapse feed ([)">‹</button>
     <span class="panel-title">Event Feed</span>
     <span id="feed-count" class="panel-badge">0</span>
   </div>
@@ -110,8 +111,53 @@
       Read source article
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 12L12 4M7 4h5v5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </a>
+    <div id="related-block" class="related-block" hidden>
+      <div class="related-head">Related Events</div>
+      <div id="related-list" class="related-list"></div>
+    </div>
   </div>
 </aside>
+
+<button id="feed-expand" class="feed-expand" hidden title="Expand feed ([)">› Event Feed</button>
+
+<aside id="intel-panel">
+  <div class="intel-head">
+    <span class="panel-title">Intel Desk</span>
+    <button id="intel-close" class="icon-btn" title="Close">×</button>
+  </div>
+  <div class="intel-tabs">
+    <button class="intel-tab on" data-tab="cctv">CCTV</button>
+    <button class="intel-tab" data-tab="youtube">YouTube</button>
+    <button class="intel-tab" data-tab="recon">RECON</button>
+  </div>
+  <div id="intel-cctv" class="intel-pane on">
+    <div id="cctv-list" class="intel-list"></div>
+    <div id="cctv-viewer" class="intel-viewer">
+      <div class="viewer-placeholder">Select a camera feed</div>
+    </div>
+  </div>
+  <div id="intel-youtube" class="intel-pane">
+    <div id="youtube-list" class="intel-list"></div>
+    <div id="youtube-viewer" class="intel-viewer">
+      <div class="viewer-placeholder">Select a live news stream</div>
+    </div>
+  </div>
+  <div id="intel-recon" class="intel-pane">
+    <form id="recon-form" class="recon-form">
+      <input id="recon-host" type="text" placeholder="hostname or IP" spellcheck="false" autocomplete="off">
+      <select id="recon-action">
+        <option value="dns">DNS lookup</option>
+        <option value="headers">HTTP headers</option>
+        <option value="ports">Port scan</option>
+        <option value="all">Full recon</option>
+      </select>
+      <button type="submit">Run</button>
+    </form>
+    <pre id="recon-output" class="recon-output">Enter a host to probe.</pre>
+  </div>
+</aside>
+
+<button id="intel-open" class="intel-open" title="Intel desk (i)">Intel</button>
 
 <aside id="layer-panel">
   <div class="layer-head">

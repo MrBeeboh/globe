@@ -14,6 +14,10 @@ const LAYERS = [
   { key: 'events', label: 'Events', color: '#c44038' },
   { key: 'zones', label: 'Conflict Zones', color: '#d4882a' },
   { key: 'heatmap', label: 'Density Heatmap', color: '#a058c8' },
+  { key: 'flights', label: 'Live Flights', color: '#38b0d8' },
+  { key: 'fires', label: 'Active Fires', color: '#ff6020' },
+  { key: 'satellites', label: 'Satellites', color: '#e8e040' },
+  { key: 'photoEarth', label: 'Photo Earth', color: '#6a9a6e' },
   { key: 'labels', label: 'Country Labels', color: '#c9a227' },
   { key: 'dayNight', label: 'Day / Night Line', color: '#7a9472' },
   { key: 'liveSun', label: 'Live Sun Position', color: '#9a948c' },
@@ -24,9 +28,12 @@ const SHORTCUTS = [
   ['/', 'Focus search'],
   ['r', 'Refresh all feeds'],
   ['j / k', 'Next / previous event'],
+  ['[', 'Collapse / expand feed'],
+  ['i', 'Intel desk (CCTV / YouTube / RECON)'],
   ['l', 'Toggle labels'],
   ['c', 'Toggle conflict zones'],
   ['h', 'Toggle heatmap'],
+  ['f', 'Toggle live flights'],
   ['d', 'Toggle day/night line'],
   ['a', 'Toggle auto-rotate'],
   ['?', 'Show shortcuts'],
@@ -45,9 +52,13 @@ const state = {
   mode: 'connecting',
   feedIdx: -1,
   layers: {
-    events: true, zones: true, heatmap: false, labels: true,
-    dayNight: true, liveSun: true, autoRotate: true,
+    events: true, zones: true, heatmap: false,
+    flights: false, fires: false, satellites: false, photoEarth: false,
+    labels: true, dayNight: true, liveSun: true, autoRotate: true,
   },
+  intel: { flights: [], fires: [], satellites: [], cctv: [], youtube: [] },
+  feedCollapsed: false,
+  intelOpen: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -202,6 +213,10 @@ function applyLayers() {
     events: state.layers.events,
     zones: state.layers.zones,
     heatmap: state.layers.heatmap,
+    flights: state.layers.flights,
+    fires: state.layers.fires,
+    satellites: state.layers.satellites,
+    photoEarth: state.layers.photoEarth,
     labels: state.layers.labels,
     dayNight: state.layers.dayNight,
     liveSun: state.layers.liveSun,
@@ -211,6 +226,9 @@ function applyLayers() {
 
 function toggleLayer(key) {
   state.layers[key] = !state.layers[key];
+  if (state.layers[key] && ['flights', 'fires', 'satellites'].includes(key)) {
+    fetchIntelOverlay(key);
+  }
   applyLayers();
   renderLayerPanel();
 }
@@ -221,6 +239,10 @@ function layerCounts() {
     events: evs.length,
     zones: state.conflictZones.length,
     heatmap: buildHeatmap(evs).length,
+    flights: state.intel.flights.length,
+    fires: state.intel.fires.length,
+    satellites: state.intel.satellites.length,
+    photoEarth: '—',
     labels: '—',
     dayNight: '—',
     liveSun: '—',
@@ -376,6 +398,34 @@ function renderIngest(channels) {
   }
 }
 
+async function fetchRelated(eventId) {
+  const block = $('related-block');
+  const list = $('related-list');
+  if (!block || !list) return;
+  block.hidden = true;
+  list.innerHTML = '';
+  if (!eventId || state.mode !== 'live') return;
+  try {
+    const r = await fetch(`/api/events/${eventId}/related?limit=6`);
+    if (!r.ok) return;
+    const data = await r.json();
+    const items = data.related || [];
+    if (!items.length) return;
+    block.hidden = false;
+    list.innerHTML = '';
+    for (const rel of items) {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'related-item';
+      el.innerHTML =
+        `<div class="r-title">${esc(rel.title)}</div>` +
+        `<div class="r-meta">${esc(CAT_LABELS[rel.category])} · ${timeAgo(rel.ts)} · ${esc(rel.place || rel.country || '')}</div>`;
+      el.onclick = () => selectEvent(rel, { fly: true });
+      list.appendChild(el);
+    }
+  } catch { /* optional */ }
+}
+
 function selectEvent(ev, { fly }) {
   state.selectedId = ev.id;
   state.selectedZoneId = null;
@@ -418,6 +468,7 @@ function selectEvent(ev, { fly }) {
   document.querySelectorAll('.feed-item').forEach((el) => el.classList.remove('selected'));
   const item = document.querySelector(`.feed-item[data-id="${ev.id}"]`);
   if (item) { item.classList.add('selected'); item.scrollIntoView({ block: 'nearest' }); }
+  fetchRelated(ev.id);
 }
 
 function selectZone(zone, { fly }) {
@@ -455,6 +506,8 @@ function selectZone(zone, { fly }) {
 
   $('detail').classList.add('open');
   document.querySelectorAll('.feed-item').forEach((el) => el.classList.remove('selected'));
+  const block = $('related-block');
+  if (block) block.hidden = true;
 }
 
 function closeDetail() {
@@ -464,11 +517,149 @@ function closeDetail() {
   state.feedIdx = -1;
   globe.setSelected(null);
   document.querySelectorAll('.feed-item').forEach((el) => el.classList.remove('selected'));
+  const block = $('related-block');
+  if (block) block.hidden = true;
+}
+
+function setFeedCollapsed(collapsed) {
+  state.feedCollapsed = collapsed;
+  document.body.classList.toggle('feed-collapsed', collapsed);
+  $('feed-expand').hidden = !collapsed;
+}
+
+function toggleFeedCollapsed() {
+  setFeedCollapsed(!state.feedCollapsed);
+}
+
+function openIntel() {
+  state.intelOpen = true;
+  $('intel-panel').classList.add('open');
+}
+
+function closeIntel() {
+  state.intelOpen = false;
+  $('intel-panel').classList.remove('open');
+}
+
+function toggleIntel() {
+  if (state.intelOpen) closeIntel();
+  else openIntel();
+}
+
+function renderCctvList() {
+  const el = $('cctv-list');
+  if (!el) return;
+  el.innerHTML = '';
+  for (const feed of state.intel.cctv) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = feed.name;
+    btn.title = feed.region;
+    btn.onclick = () => {
+      el.querySelectorAll('button').forEach((b) => b.classList.remove('on'));
+      btn.classList.add('on');
+      const viewer = $('cctv-viewer');
+      viewer.innerHTML = `<iframe src="${esc(feed.url)}" allow="autoplay; encrypted-media" allowfullscreen loading="lazy"></iframe>`;
+      globe.flyTo(feed.lat, feed.lon);
+    };
+    el.appendChild(btn);
+  }
+}
+
+function renderYoutubeList() {
+  const el = $('youtube-list');
+  if (!el) return;
+  el.innerHTML = '';
+  for (const stream of state.intel.youtube) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = stream.name;
+    btn.title = stream.region;
+    btn.onclick = () => {
+      el.querySelectorAll('button').forEach((b) => b.classList.remove('on'));
+      btn.classList.add('on');
+      const viewer = $('youtube-viewer');
+      viewer.innerHTML = `<iframe src="${esc(stream.embed)}" allow="autoplay; encrypted-media" allowfullscreen loading="lazy"></iframe>`;
+      if (stream.lat != null) globe.flyTo(stream.lat, stream.lon);
+    };
+    el.appendChild(btn);
+  }
+}
+
+async function loadIntelStatic() {
+  try {
+    const [cctv, yt] = await Promise.all([
+      fetch('/api/cctv').then((r) => r.json()),
+      fetch('/api/youtube').then((r) => r.json()),
+    ]);
+    state.intel.cctv = cctv.feeds || [];
+    state.intel.youtube = yt.streams || [];
+    renderCctvList();
+    renderYoutubeList();
+  } catch { /* optional */ }
+}
+
+async function fetchIntelOverlay(kind) {
+  try {
+    const r = await fetch(`/api/intel/${kind}`);
+    if (!r.ok) return;
+    const data = await r.json();
+    state.intel[kind] = data.items || [];
+    if (kind === 'flights') globe.setFlights(state.intel.flights);
+    if (kind === 'fires') globe.setFires(state.intel.fires);
+    if (kind === 'satellites') globe.setSatellites(state.intel.satellites);
+    renderLayerPanel();
+  } catch { /* optional */ }
+}
+
+async function refreshIntelOverlays() {
+  await Promise.all([
+    fetchIntelOverlay('flights'),
+    fetchIntelOverlay('satellites'),
+    fetchIntelOverlay('fires'),
+  ]);
+}
+
+async function runRecon(host, action) {
+  const out = $('recon-output');
+  out.textContent = 'Running…';
+  try {
+    const r = await fetch('/api/recon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ host, action }),
+    });
+    const data = await r.json();
+    out.textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    out.textContent = String(e);
+  }
 }
 
 // ---------------------------------------------------------------- controls
 
 $('detail-close').onclick = closeDetail;
+$('feed-collapse').onclick = toggleFeedCollapsed;
+$('feed-expand').onclick = toggleFeedCollapsed;
+$('intel-open').onclick = toggleIntel;
+$('intel-close').onclick = closeIntel;
+
+document.querySelectorAll('.intel-tab').forEach((tab) => {
+  tab.onclick = () => {
+    document.querySelectorAll('.intel-tab').forEach((t) => t.classList.remove('on'));
+    document.querySelectorAll('.intel-pane').forEach((p) => p.classList.remove('on'));
+    tab.classList.add('on');
+    const pane = $(`intel-${tab.dataset.tab}`);
+    if (pane) pane.classList.add('on');
+  };
+});
+
+$('recon-form').onsubmit = (e) => {
+  e.preventDefault();
+  const host = $('recon-host').value.trim();
+  const action = $('recon-action').value;
+  if (host) runRecon(host, action);
+};
 
 $('search').oninput = (e) => {
   const v = e.target.value;
@@ -561,7 +752,7 @@ function inInput() {
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { closeShortcuts(); closeDetail(); return; }
+  if (e.key === 'Escape') { closeShortcuts(); closeDetail(); closeIntel(); return; }
   if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
     if (!inInput()) { e.preventDefault(); openShortcuts(); }
     return;
@@ -575,6 +766,9 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'h') { toggleLayer('heatmap'); return; }
   if (e.key === 'd') { toggleLayer('dayNight'); return; }
   if (e.key === 'a') { toggleLayer('autoRotate'); return; }
+  if (e.key === 'f') { toggleLayer('flights'); return; }
+  if (e.key === '[') { toggleFeedCollapsed(); return; }
+  if (e.key === 'i') { toggleIntel(); return; }
 
   const evs = visibleEvents();
   if (!evs.length) return;
@@ -611,8 +805,13 @@ document.addEventListener('keydown', (e) => {
   applyLayers();
   renderLayerPanel();
 
+  setLoaderStep('Loading intel overlays…');
+  await Promise.all([loadIntelStatic(), refreshIntelOverlays()]);
+
   setLoaderStep('Fetching live events…');
   await Promise.all([fetchEvents(), fetchStats()]);
+
+  setInterval(refreshIntelOverlays, 120000);
 
   $('loading').classList.add('done');
 })();

@@ -105,7 +105,26 @@ html, body {
   border-right: 1px solid var(--border);
   z-index: 10;
   box-shadow: var(--shadow);
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
+body.feed-collapsed #feed-panel { transform: translateX(-100%); pointer-events: none; }
+
+.icon-btn {
+  width: 28px; height: 28px; border-radius: var(--radius);
+  border: 1px solid var(--border-strong); background: rgba(255,255,255,0.04);
+  color: var(--text-secondary); font-size: 16px; line-height: 1; cursor: pointer;
+  flex-shrink: 0;
+}
+.icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+
+.feed-expand {
+  position: fixed; top: 64px; left: 0; z-index: 11;
+  padding: 8px 12px 8px 8px; border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+  background: var(--surface); border: 1px solid var(--border); border-left: none;
+  color: var(--accent); font: inherit; font-size: 11px; font-weight: 600;
+  cursor: pointer; box-shadow: var(--shadow);
+}
+.feed-expand:hover { background: var(--accent-dim); }
 
 .panel-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -289,6 +308,21 @@ html, body {
 #detail-link svg { width: 14px; height: 14px; }
 #detail-link:hover { background: var(--accent); transform: translateY(-1px); }
 
+.related-block { border-top: 1px solid var(--border); padding-top: 12px; }
+.related-head {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-faint); margin-bottom: 8px;
+}
+.related-list { display: flex; flex-direction: column; gap: 6px; }
+.related-item {
+  padding: 8px 10px; border-radius: var(--radius);
+  background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+  cursor: pointer; transition: background 0.12s;
+}
+.related-item:hover { background: var(--accent-dim); border-color: rgba(201,162,39,0.25); }
+.related-item .r-title { font-size: 11px; font-weight: 600; color: var(--text); line-height: 1.35; }
+.related-item .r-meta { font-size: 9px; color: var(--text-faint); margin-top: 3px; font-family: var(--mono); }
+
 /* ── Layer panel (Osiris-style) ── */
 #layer-panel {
   position: fixed; top: 52px; right: 0; bottom: 28px; width: 200px;
@@ -364,9 +398,84 @@ html, body {
   background: rgba(255,255,255,0.04);
 }
 
+/* ── Intel desk ── */
+#intel-panel {
+  position: fixed; left: 0; bottom: 28px; width: 420px; max-width: calc(100vw - 220px);
+  height: 280px; z-index: 16;
+  display: flex; flex-direction: column;
+  background: var(--surface); backdrop-filter: blur(16px);
+  border: 1px solid var(--border-strong); border-left: none;
+  border-radius: 0 var(--radius) 0 0;
+  box-shadow: var(--shadow);
+  transform: translateY(calc(100% + 28px));
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+body.feed-collapsed #intel-panel { left: 0; }
+#intel-panel.open { transform: translateY(0); }
+.intel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+}
+.intel-tabs { display: flex; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.intel-tab {
+  flex: 1; padding: 6px 8px; border-radius: var(--radius);
+  border: 1px solid transparent; background: transparent;
+  color: var(--text-secondary); font: inherit; font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+}
+.intel-tab.on { background: var(--accent-dim); border-color: rgba(201,162,39,0.3); color: var(--accent); }
+.intel-pane { display: none; flex: 1; min-height: 0; overflow: hidden; }
+.intel-pane.on { display: flex; flex-direction: column; }
+#intel-cctv.on, #intel-youtube.on { display: grid; grid-template-columns: 140px 1fr; }
+.intel-list { overflow-y: auto; border-right: 1px solid var(--border); }
+.intel-list button {
+  display: block; width: 100%; text-align: left; padding: 8px 10px;
+  border: none; border-bottom: 1px solid var(--border);
+  background: transparent; color: var(--text-secondary);
+  font: inherit; font-size: 10px; cursor: pointer;
+}
+.intel-list button:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+.intel-list button.on { background: var(--accent-dim); color: var(--accent); }
+.intel-viewer { position: relative; background: #000; min-height: 0; }
+.intel-viewer iframe { width: 100%; height: 100%; border: none; }
+.viewer-placeholder {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--text-faint);
+}
+.recon-form {
+  display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--border);
+}
+.recon-form input, .recon-form select {
+  flex: 1; padding: 7px 10px; border-radius: var(--radius);
+  background: var(--bg-elevated); border: 1px solid var(--border-strong);
+  color: var(--text); font: inherit; font-size: 12px;
+}
+.recon-form button {
+  padding: 7px 14px; border-radius: var(--radius); border: none;
+  background: var(--brass); color: #0c0b09; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
+}
+.recon-output {
+  flex: 1; margin: 0; padding: 10px 12px; overflow: auto;
+  font-family: var(--mono); font-size: 10px; line-height: 1.5;
+  color: var(--text-secondary); white-space: pre-wrap; word-break: break-word;
+}
+.intel-open {
+  position: fixed; left: 372px; bottom: 36px; z-index: 14;
+  padding: 8px 14px; border-radius: var(--radius-pill);
+  background: var(--surface); border: 1px solid var(--border-strong);
+  color: var(--accent); font: inherit; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+  box-shadow: var(--shadow);
+}
+body.feed-collapsed .intel-open { left: 12px; }
+.intel-open:hover { background: var(--accent-dim); }
+
 /* ── News ticker ── */
 #ticker-bar {
   position: fixed; left: 360px; right: 200px; bottom: 0; height: 28px;
+  transition: left 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+body.feed-collapsed #ticker-bar { left: 0; }
   display: flex; align-items: stretch;
   background: rgba(8, 7, 6, 0.94); backdrop-filter: blur(12px);
   border-top: 1px solid rgba(201, 162, 39, 0.25);
@@ -504,7 +613,10 @@ html, body {
   #clock { display: none; }
   #layer-panel { width: 160px; }
   #ticker-bar { left: 300px; right: 160px; }
+  body.feed-collapsed #ticker-bar { left: 0; }
   #hud { right: 172px; }
+  .intel-open { left: 312px; }
+  #intel-panel { width: 100%; max-width: calc(100vw - 180px); }
 }
 @media (max-width: 600px) {
   #feed-panel { width: 100%; max-width: 320px; }

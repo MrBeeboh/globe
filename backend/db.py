@@ -150,6 +150,35 @@ def get_event(event_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+def related_events(event_id: str, limit: int = 8) -> list[dict]:
+    """Events near the same place: country, category, or within ~4°."""
+    ev = get_event(event_id)
+    if not ev:
+        return []
+    conn = get_conn()
+    lim = min(int(limit), 20)
+    rows = conn.execute(
+        """SELECT * FROM events
+           WHERE id != ?
+             AND ts >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-72 hours')
+             AND (
+               (country != '' AND country = ?)
+               OR category = ?
+               OR (ABS(lat - ?) < 4 AND ABS(lon - ?) < 4)
+             )
+           ORDER BY
+             CASE WHEN country != '' AND country = ? THEN 0 ELSE 1 END,
+             ABS(lat - ?) + ABS(lon - ?),
+             severity DESC,
+             ts DESC
+           LIMIT ?""",
+        (event_id, ev.get("country", ""), ev["category"],
+         ev["lat"], ev["lon"], ev.get("country", ""),
+         ev["lat"], ev["lon"], lim),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def stats() -> dict:
     conn = get_conn()
     total = conn.execute("SELECT COUNT(*) c FROM events").fetchone()["c"]

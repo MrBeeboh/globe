@@ -1,0 +1,19 @@
+{
+  "feeds": [
+    {"id": "kyiv-maidan", "name": "Kyiv — Independence Square", "lat": 50.4501, "lon": 30.5234, "region": "Ukraine", "url": "https://www.youtube.com/embed/live_stream?channel=UCHq0mYbGDjdqKKNAk0Os8sA", "type": "youtube"},
+    {"id": "tel-aviv", "name": "Tel Aviv — Beach Cam", "lat": 32.0853, "lon": 34.7818, "region": "Israel", "url": "https://www.youtube.com/embed/live_stream?channel=UCQfwfsi5VrQ8yKZ-UWmAEFg", "type": "youtube"},
+    {"id": "tokyo-shibuya", "name": "Tokyo — Shibuya Crossing", "lat": 35.6595, "lon": 139.7004, "region": "Japan", "url": "https://www.youtube.com/embed/live_stream?channel=UC5l23Fhxc0gDHLmBveIQLPg", "type": "youtube"},
+    {"id": "london-trafalgar", "name": "London — Trafalgar Square", "lat": 51.508, "lon": -0.1281, "region": "UK", "url": "https://www.youtube.com/embed/live_stream?channel=UC8C1LLhSoHF-soB0jVFAJ8Q", "type": "youtube"},
+    {"id": "nyc-times-square", "name": "New York — Times Square", "lat": 40.758, "lon": -73.9855, "region": "USA", "url": "https://www.youtube.com/embed/live_stream?channel=UCoMdktPbSTpAyPdOw7QACTg", "type": "youtube"},
+    {"id": "paris-eiffel", "name": "Paris — Eiffel Tower", "lat": 48.8584, "lon": 2.2945, "region": "France", "url": "https://www.youtube.com/embed/live_stream?channel=UCqVDpXKLmKeBU_yyt_QkItQ", "type": "youtube"},
+    {"id": "dubai-marina", "name": "Dubai — Marina", "lat": 25.08, "lon": 55.14, "region": "UAE", "url": "https://www.youtube.com/embed/live_stream?channel=UC4Ya9tQgzM9O3HMx4L_bSgQ", "type": "youtube"},
+    {"id": "istanbul-bosphorus", "name": "Istanbul — Bosphorus", "lat": 41.04, "lon": 29.0, "region": "Turkey", "url": "https://www.youtube.com/embed/live_stream?channel=UCQfwfsi5VrQ8yKZ-UWmAEFg", "type": "youtube"},
+    {"id": "seoul-gangnam", "name": "Seoul — Gangnam", "lat": 37.4979, "lon": 127.0276, "region": "South Korea", "url": "https://www.youtube.com/embed/live_stream?channel=UC5l23Fhxc0gDHLmBveIQLPg", "type": "youtube"},
+    {"id": "sydney-harbour", "name": "Sydney — Harbour", "lat": -33.8568, "lon": 151.2153, "region": "Australia", "url": "https://www.youtube.com/embed/live_stream?channel=UC8C1LLhSoHF-soB0jVFAJ8Q", "type": "youtube"},
+    {"id": "moscow-red-square", "name": "Moscow — Red Square area", "lat": 55.7539, "lon": 37.6208, "region": "Russia", "url": "https://www.youtube.com/embed/live_stream?channel=UCQfwfsi5VrQ8yKZ-UWmAEFg", "type": "youtube"},
+    {"id": "beirut-corniche", "name": "Beirut — Corniche", "lat": 33.8938, "lon": 35.5018, "region": "Lebanon", "url": "https://www.youtube.com/embed/live_stream?channel=UC4Ya9tQgzM9O3HMx4L_bSgQ", "type": "youtube"},
+    {"id": "cairo-pyramids", "name": "Cairo — Pyramids view", "lat": 29.9792, "lon": 31.1342, "region": "Egypt", "url": "https://www.youtube.com/embed/live_stream?channel=UCoMdktPbSTpAyPdOw7QACTg", "type": "youtube"},
+    {"id": "taipei-101", "name": "Taipei — City view", "lat": 25.033, "lon": 121.5654, "region": "Taiwan", "url": "https://www.youtube.com/embed/live_stream?channel=UC5l23Fhxc0gDHLmBveIQLPg", "type": "youtube"},
+    {"id": "berlin-brandenburg", "name": "Berlin — Brandenburg Gate", "lat": 52.5163, "lon": 13.3777, "region": "Germany", "url": "https://www.youtube.com/embed/live_stream?channel=UCqVDpXKLmKeBU_yyt_QkItQ", "type": "youtube"}
+  ]
+}

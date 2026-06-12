@@ -9,7 +9,9 @@ from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import db, ingest
+from pydantic import BaseModel, Field
+
+from . import db, ingest, intel, recon
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -31,6 +33,8 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(ingest.ingest_usgs, "interval", minutes=15)
         scheduler.add_job(ingest.ingest_gdacs, "interval", minutes=20)
         scheduler.add_job(db.prune, "interval", hours=6)
+        scheduler.add_job(intel.refresh_all, "interval", minutes=3)
+        threading.Thread(target=intel.refresh_all, daemon=True).start()
         scheduler.start()
     yield
     if scheduler:
@@ -59,6 +63,44 @@ def events(
 @app.get("/api/events/{event_id}")
 def event(event_id: str):
     return db.get_event(event_id) or {"error": "not found"}
+
+
+@app.get("/api/events/{event_id}/related")
+def event_related(event_id: str, limit: int = Query(8, ge=1, le=20)):
+    return {"related": db.related_events(event_id, limit)}
+
+
+@app.get("/api/intel/{kind}")
+def intel_feed(kind: str):
+    if kind not in ("flights", "satellites", "fires"):
+        return {"error": "unknown kind", "items": []}
+    return intel.get_intel(kind)
+
+
+@app.get("/api/cctv")
+def cctv_feeds():
+    import json
+    path = os.path.join(ROOT, "data", "cctv-feeds.json")
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+@app.get("/api/youtube")
+def youtube_streams():
+    import json
+    path = os.path.join(ROOT, "data", "youtube-streams.json")
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+class ReconRequest(BaseModel):
+    host: str = Field(..., min_length=1, max_length=253)
+    action: str = "dns"
+
+
+@app.post("/api/recon")
+def recon_scan(body: ReconRequest):
+    return recon.run_recon(body.host, body.action)
 
 
 @app.get("/api/stats")
