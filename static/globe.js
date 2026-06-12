@@ -1,4 +1,5 @@
 /* Professional globe renderer: procedural basemap, atmosphere, labels, event markers. */
+console.log('[globe] renderer v16 — pole fixes active');
 import * as THREE from 'three';
 import { OrbitControls } from '/static/vendor/OrbitControls.js';
 
