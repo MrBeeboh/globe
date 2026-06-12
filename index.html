@@ -3,7 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GLOBE — Live Event Monitor</title>
+<meta name="description" content="Real-time 3D globe tracking global conflicts, disasters, and geopolitical events.">
+<meta name="theme-color" content="#080c14">
+<title>Globe — Live Event Monitor</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230a1628' stroke='%234da6ff' stroke-width='1.5'/%3E%3Ccircle cx='12' cy='14' r='5' fill='%232a5a3a'/%3E%3Ccircle cx='20' cy='12' r='3' fill='%232a5a3a'/%3E%3Ccircle cx='18' cy='20' r='4' fill='%232a5a3a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/styles.css">
 <script src="/static/vendor/topojson-client.min.js"></script>
 <script type="importmap">
@@ -15,67 +21,122 @@
 <div id="scene"></div>
 
 <header id="topbar">
-  <div id="wordmark">GLOBE <span>//</span> LIVE EVENT MONITOR</div>
+  <div class="brand">
+    <svg class="brand-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <ellipse cx="12" cy="12" rx="10" ry="4" fill="none" stroke="currentColor" stroke-width="0.6" opacity="0.5"/>
+      <path d="M2 12h20" stroke="currentColor" stroke-width="0.6" opacity="0.4"/>
+      <circle cx="9" cy="10" r="3" fill="currentColor" opacity="0.35"/>
+      <circle cx="15" cy="14" r="2" fill="currentColor" opacity="0.35"/>
+    </svg>
+    <div>
+      <div id="wordmark">Globe</div>
+      <div class="brand-sub">Live Event Monitor</div>
+    </div>
+  </div>
   <div id="topstats">
-    <span class="stat label">events <b id="stat-count">0</b></span>
-    <span class="stat label">window <b id="stat-window">72h</b></span>
-    <span id="conn" class="connecting"><span class="dot"></span><span class="label">…</span></span>
-    <span id="clock"></span>
+    <div class="stat-pill">
+      <span class="label">Events</span>
+      <b id="stat-count">0</b>
+    </div>
+    <div class="stat-pill">
+      <span class="label">Window</span>
+      <b id="stat-window">72h</b>
+    </div>
+    <div id="conn" class="connecting">
+      <span class="dot"></span>
+      <span class="conn-label">Connecting…</span>
+    </div>
+    <div id="clock"></div>
   </div>
 </header>
 
 <aside id="feed-panel">
+  <div class="panel-head">
+    <span class="panel-title">Event Feed</span>
+    <span id="feed-count" class="panel-badge">0</span>
+  </div>
   <div id="feed-controls">
-    <input id="search" type="text" placeholder="search events, places, actors…" spellcheck="false">
+    <div class="search-wrap">
+      <svg class="search-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <input id="search" type="text" placeholder="Search events, places, actors…" spellcheck="false" autocomplete="off">
+      <button id="search-clear" class="search-clear" hidden aria-label="Clear search">×</button>
+    </div>
     <div class="chip-row" id="cat-chips"></div>
     <div class="select-row">
       <select id="sel-window" title="Time window">
-        <option value="6">last 6 h</option>
-        <option value="24">last 24 h</option>
-        <option value="72" selected>last 72 h</option>
-        <option value="168">last 7 d</option>
+        <option value="6">Last 6 hours</option>
+        <option value="24">Last 24 hours</option>
+        <option value="72" selected>Last 72 hours</option>
+        <option value="168">Last 7 days</option>
       </select>
       <select id="sel-sev" title="Minimum severity">
-        <option value="0" selected>all severity</option>
-        <option value="0.45">sev ≥ 0.45</option>
-        <option value="0.7">sev ≥ 0.70</option>
+        <option value="0" selected>All severity</option>
+        <option value="0.45">Medium+</option>
+        <option value="0.7">High only</option>
       </select>
     </div>
   </div>
   <div id="feed"></div>
+  <footer id="ingest-bar">
+    <div class="ingest-head">
+      <span class="label">Data channels</span>
+      <span id="refresh-timer" class="refresh-timer">refresh in 60s</span>
+    </div>
+    <div id="ingest-channels"></div>
+  </footer>
 </aside>
 
 <aside id="detail">
   <header>
-    <span class="label">event detail</span>
-    <button id="detail-close">esc</button>
+    <span class="panel-title">Event Detail</span>
+    <button id="detail-close" title="Close (Esc)">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
   </header>
   <div id="detail-body">
+    <div id="detail-badges"></div>
     <div id="detail-title"></div>
-    <div class="sevbar" id="detail-sev"></div>
+    <div class="sevbar-wrap">
+      <div class="sevbar-labels"><span>Low</span><span id="detail-sev-text">—</span><span>High</span></div>
+      <div class="sevbar" id="detail-sev"></div>
+    </div>
     <div id="detail-summary"></div>
     <dl class="kv" id="detail-kv"></dl>
-    <a id="detail-link" href="#" target="_blank" rel="noopener">open source article ↗</a>
+    <a id="detail-link" href="#" target="_blank" rel="noopener">
+      Read source article
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 12L12 4M7 4h5v5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
   </div>
 </aside>
 
-<div id="legend">
-  <div class="row"><span class="label">severity</span>
-    <span class="swatch" style="background:#b58a3a"></span><span class="label">low</span>
-    <span class="swatch" style="background:#ffa01e"></span><span class="label">med</span>
-    <span class="swatch" style="background:#ff4632"></span><span class="label">high</span>
+<div id="hud">
+  <button id="labels-toggle" class="hud-btn active" title="Toggle map labels">
+    <span class="pill-dot"></span> Labels
+  </button>
+  <div id="legend">
+    <div class="legend-title">Severity</div>
+    <div class="legend-items">
+      <span class="leg-item"><i class="swatch low"></i> Low</span>
+      <span class="leg-item"><i class="swatch med"></i> Medium</span>
+      <span class="leg-item"><i class="swatch high"></i> High</span>
+    </div>
+    <div class="legend-hint">Drag to rotate · Scroll to zoom · Click marker for detail</div>
   </div>
-  <div class="src">GDELT · USGS · GDACS · RSS — Natural Earth basemap</div>
 </div>
 
-<div id="tooltip"></div>
-<div id="loading">INITIALIZING BASEMAP</div>
+<div id="tooltip">
+  <div class="tt-badges"></div>
+  <div class="tt-title"></div>
+  <div class="tt-meta"></div>
+</div>
 
-<script>
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') document.getElementById('detail-close').click();
-  });
-</script>
+<div id="loading">
+  <div class="loader-ring"></div>
+  <div class="loader-text">Initializing globe</div>
+  <div class="loader-step" id="loader-step">Loading cartography…</div>
+</div>
+
 <script type="module" src="/static/app.js"></script>
 </body>
 </html>
