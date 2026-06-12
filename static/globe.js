@@ -3,11 +3,11 @@ import * as THREE from 'three';
 import { OrbitControls } from '/static/vendor/OrbitControls.js';
 
 const PALETTE = {
-  ocean: '#1a4a7a',
-  oceanDeep: '#0c2848',
-  coast: 'rgba(200, 230, 255, 0.7)',
-  graticule: 'rgba(255, 255, 255, 0.06)',
-  border3d: 0xc8dce8,
+  ocean: '#243028',
+  oceanDeep: '#121a16',
+  coast: 'rgba(200, 185, 155, 0.55)',
+  graticule: 'rgba(220, 200, 170, 0.05)',
+  border3d: 0xd8ccb8,
   biomes: [
     [90, '#e8eef2'], [74, '#d0dde0'], [66, '#7a9a7c'], [58, '#3d6b3a'],
     [46, '#4a7a42'], [36, '#8a9a52'], [27, '#b8a070'], [20, '#c4a060'],
@@ -100,9 +100,9 @@ function shortCountryName(name) {
 }
 
 export function sevColor(s) {
-  if (s >= 0.7) return '#ff5544';
-  if (s >= 0.45) return '#ffaa22';
-  return '#c9a227';
+  if (s >= 0.7) return '#c44038';
+  if (s >= 0.45) return '#d4882a';
+  return '#b58a3a';
 }
 
 export function latLonToVec3(lat, lon, r) {
@@ -224,7 +224,7 @@ function buildTexture(countriesGeo) {
   }
   lctx.globalCompositeOperation = 'source-over';
 
-  ctx.shadowColor = 'rgba(160, 210, 255, 0.6)';
+  ctx.shadowColor = 'rgba(180, 155, 110, 0.45)';
   ctx.shadowBlur = 10;
   ctx.drawImage(land, 0, 0);
   ctx.shadowBlur = 0;
@@ -280,16 +280,16 @@ function makeLabelSprite(text, { fontSize = 14, bold = false } = {}) {
   ctx.font = font;
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
-  ctx.strokeStyle = 'rgba(4, 8, 16, 0.9)';
+  ctx.strokeStyle = 'rgba(12, 10, 8, 0.92)';
   ctx.lineWidth = 2.5;
   ctx.lineJoin = 'round';
   ctx.strokeText(text, canvas.width / 2, canvas.height / 2);
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = '#d8d0c4';
   ctx.fillText(text, canvas.width / 2, canvas.height / 2);
   const tex = new THREE.CanvasTexture(canvas);
   tex.minFilter = THREE.LinearFilter;
   const mat = new THREE.SpriteMaterial({
-    map: tex, transparent: true, depthTest: true, depthWrite: false, color: 0x9aabb8,
+    map: tex, transparent: true, depthTest: true, depthWrite: false, color: 0x9a9088,
   });
   const sprite = new THREE.Sprite(mat);
   sprite.userData = { type: 'country', aspect: canvas.width / canvas.height };
@@ -378,14 +378,14 @@ const GLOBE_FRAG = `
     vec3 N = normalize(vNormal);
     float d = dot(N, sunDir);
     float day = smoothstep(-0.08, 0.18, d);
-    vec3 night = c * vec3(0.35, 0.38, 0.52);
-    vec3 dayC  = c * vec3(1.15, 1.10, 1.02);
+    vec3 night = c * vec3(0.32, 0.30, 0.28);
+    vec3 dayC  = c * vec3(1.12, 1.06, 0.98);
     vec3 col = mix(night, dayC, day);
     float term = smoothstep(0.0, 0.08, d) * (1.0 - smoothstep(0.08, 0.25, d));
-    col += vec3(0.18, 0.10, 0.03) * term * c * 1.8;
+    col += vec3(0.22, 0.14, 0.05) * term * c * 1.6;
     vec3 viewDir = normalize(cameraPos - vWorldPos);
     float rim = pow(1.0 - max(dot(N, viewDir), 0.0), 2.5);
-    col += vec3(0.25, 0.50, 0.95) * rim * 0.35 * smoothstep(-0.05, 0.2, d);
+    col += vec3(0.55, 0.42, 0.18) * rim * 0.22 * smoothstep(-0.05, 0.2, d);
     gl_FragColor = vec4(col, 1.0);
   }`;
 
@@ -401,8 +401,8 @@ const ATMOS_FRAG = `
     float sunDot = dot(N, sunDir);
     float rim = pow(1.0 - max(viewDot, 0.0), 4.0);
     float daySide = smoothstep(-0.1, 0.15, sunDot);
-    vec3 color = mix(vec3(0.08, 0.15, 0.35), vec3(0.3, 0.55, 1.0), daySide);
-    float intensity = rim * mix(0.06, 0.22, daySide);
+    vec3 color = mix(vec3(0.12, 0.10, 0.08), vec3(0.55, 0.42, 0.22), daySide);
+    float intensity = rim * mix(0.04, 0.14, daySide);
     gl_FragColor = vec4(color, intensity);
   }`;
 
@@ -422,7 +422,7 @@ export class Globe {
     this._selRing = null;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x080c14);
+    this.scene.background = new THREE.Color(0x0c0b09);
 
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
     const sun = subsolarDirection(new Date());
@@ -490,7 +490,7 @@ export class Globe {
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
     this.scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({
-      color: 0x8899bb, size: 0.05, sizeAttenuation: true, transparent: true, opacity: 0.7,
+      color: 0x6a6058, size: 0.05, sizeAttenuation: true, transparent: true, opacity: 0.55,
     })));
 
     this._buildLabels(countries);
@@ -699,7 +699,7 @@ export class Globe {
         s.visible = true;
         const aspect = s.userData.aspect || 1;
         s.scale.set(h * aspect, h, 1);
-        s.material.color.setHex(hasEvent ? 0xe8f2ff : 0x8a9aaa);
+        s.material.color.setHex(hasEvent ? 0xe8dcc8 : 0x8a8278);
         s.material.opacity = hasEvent
           ? Math.min(1, 0.55 + facing * 0.45)
           : Math.min(0.9, 0.3 + facing * 0.55);
