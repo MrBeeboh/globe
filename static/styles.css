@@ -55,6 +55,8 @@ html, body {
 }
 #conn.live .dot { background: var(--green); box-shadow: 0 0 6px rgba(63,174,106,.7); }
 #conn.sample .dot { background: var(--accent); }
+#conn.connecting .dot { background: var(--faint); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 
 /* ---------- feed panel ---------- */
 #feed-panel {

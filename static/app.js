@@ -45,14 +45,24 @@ function sevClass(s) { return s >= 0.7 ? 'sev-high' : s >= 0.45 ? 'sev-mid' : 's
 
 // ---------------------------------------------------------------- data
 
+function eventQueryParams() {
+  const p = new URLSearchParams({
+    since_hours: state.sinceHours,
+    limit: 1500,
+    min_severity: state.minSev,
+  });
+  if (state.q) p.set('q', state.q);
+  return p;
+}
+
 async function fetchEvents() {
   try {
-    const r = await fetch(`/api/events?since_hours=${state.sinceHours}&limit=1500`);
+    const r = await fetch(`/api/events?${eventQueryParams()}`);
     if (!r.ok) throw new Error(r.status);
     const data = await r.json();
     state.mode = 'live';
     state.events = data.events;
-    if (state.events.length === 0 && !state._sampleNoted) {
+    if (state.events.length === 0 && !state.q && !state._sampleNoted) {
       // backend up but DB still empty (first ingest in flight) — show samples meanwhile
       await loadSamples();
     }
@@ -79,11 +89,16 @@ async function loadSamples() {
 
 function visibleEvents() {
   const q = state.q.toLowerCase();
-  return state.events.filter((e) =>
-    state.cats.has(e.category) &&
-    e.severity >= state.minSev &&
-    (!q || (e.title + ' ' + e.place + ' ' + e.country + ' ' + e.actors).toLowerCase().includes(q))
-  );
+  return state.events.filter((e) => {
+    if (!state.cats.has(e.category)) return false;
+    if (state.mode === 'sample') {
+      if (e.severity < state.minSev) return false;
+      if (q && !(e.title + ' ' + e.place + ' ' + e.country + ' ' + e.actors).toLowerCase().includes(q)) {
+        return false;
+      }
+    }
+    return true;
+  });
 }
 
 // ---------------------------------------------------------------- render
@@ -188,14 +203,22 @@ $('detail-close').onclick = () => {
 let searchTimer;
 $('search').oninput = (e) => {
   clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => { state.q = e.target.value.trim(); render(); }, 180);
+  searchTimer = setTimeout(() => {
+    state.q = e.target.value.trim();
+    if (state.mode === 'live') fetchEvents();
+    else render();
+  }, 280);
 };
 
 $('sel-window').onchange = (e) => {
   state.sinceHours = +e.target.value;
   fetchEvents();
 };
-$('sel-sev').onchange = (e) => { state.minSev = +e.target.value; render(); };
+$('sel-sev').onchange = (e) => {
+  state.minSev = +e.target.value;
+  if (state.mode === 'live') fetchEvents();
+  else render();
+};
 
 function tickClock() {
   $('clock').textContent = new Date().toISOString().slice(0, 19).replace('T', ' ') + ' UTC';

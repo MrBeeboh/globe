@@ -1,5 +1,5 @@
-/* Vector globe renderer: procedural cartographic texture + 3D borders + event markers.
-   No photo textures, no bloom — flat ops-console cartography. */
+/* Vector globe renderer: procedural biome basemap + 3D borders + event markers.
+   No photo textures — latitude-banded land, day/night shader, ops-console markers. */
 import * as THREE from 'three';
 import { OrbitControls } from '/static/vendor/OrbitControls.js';
 

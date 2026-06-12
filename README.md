@@ -9,8 +9,9 @@ and geopolitical events. One Python process, one port, zero external CDNs.
 
 Deliberately **not** the usual glowing blue-marble look. The basemap is drawn
 procedurally at runtime from Natural Earth vector data (bundled TopoJSON) —
-flat graphite cartography, crisp country borders, a real day/night terminator,
-monospace UI, and a single amber→red severity palette.
+latitude-banded biome land (ice → boreal → temperate → desert → tropics), crisp
+coastlines and country borders, a real day/night terminator, monospace ops-console
+UI, and a single amber→red severity palette.
 
 ## Data sources (all public, no API keys)
 
