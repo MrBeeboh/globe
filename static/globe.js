@@ -15,33 +15,89 @@ const PALETTE = {
   ],
 };
 
-// Short display names — long names blow up sprite aspect ratio and overlap.
-const COUNTRY_LABELS = [
-  { name: 'United States of America', short: 'USA', lat: 39.8, lon: -98.5, tier: 1 },
-  { name: 'China', short: 'China', lat: 35.0, lon: 103.0, tier: 1 },
-  { name: 'Russia', short: 'Russia', lat: 61.5, lon: 95.0, tier: 1 },
-  { name: 'India', short: 'India', lat: 21.0, lon: 78.0, tier: 1 },
-  { name: 'Brazil', short: 'Brazil', lat: -10.0, lon: -55.0, tier: 1 },
-  { name: 'United Kingdom', short: 'UK', lat: 55.4, lon: -3.4, tier: 2 },
-  { name: 'France', short: 'France', lat: 46.6, lon: 2.2, tier: 2 },
-  { name: 'Germany', short: 'Germany', lat: 51.2, lon: 10.4, tier: 2 },
-  { name: 'Japan', short: 'Japan', lat: 36.2, lon: 138.3, tier: 2 },
-  { name: 'Ukraine', short: 'Ukraine', lat: 49.0, lon: 32.0, tier: 2 },
-  { name: 'Iran', short: 'Iran', lat: 32.4, lon: 53.7, tier: 3 },
-  { name: 'Turkey', short: 'Turkey', lat: 39.0, lon: 35.0, tier: 3 },
-  { name: 'Saudi Arabia', short: 'Saudi', lat: 23.9, lon: 45.1, tier: 3 },
-  { name: 'Israel', short: 'Israel', lat: 31.5, lon: 35.0, tier: 3 },
-  { name: 'Egypt', short: 'Egypt', lat: 26.8, lon: 30.8, tier: 3 },
-  { name: 'Nigeria', short: 'Nigeria', lat: 9.1, lon: 8.7, tier: 3 },
-  { name: 'South Africa', short: 'S. Africa', lat: -30.6, lon: 23.0, tier: 3 },
-  { name: 'Australia', short: 'Australia', lat: -25.3, lon: 133.8, tier: 3 },
-];
+// Event country strings → Natural Earth topojson names
+const EVENT_COUNTRY_ALIASES = {
+  'United States': 'United States of America',
+  'United States of America': 'United States of America',
+  'USA': 'United States of America',
+  'UK': 'United Kingdom',
+  'Britain': 'United Kingdom',
+  'Russia': 'Russia',
+  'Russian Federation': 'Russia',
+  'The Democratic Republic of Congo': 'Dem. Rep. Congo',
+  'Democratic Republic of Congo': 'Dem. Rep. Congo',
+  'DR Congo': 'Dem. Rep. Congo',
+  'DRC': 'Dem. Rep. Congo',
+  'Dem. Rep. Congo': 'Dem. Rep. Congo',
+  'Central African Republic': 'Central African Rep.',
+  'Central African Rep.': 'Central African Rep.',
+  'South Sudan': 'S. Sudan',
+  'S. Sudan': 'S. Sudan',
+  'Ivory Coast': "Côte d'Ivoire",
+  'Czech Republic': 'Czechia',
+  'Burma': 'Myanmar',
+  'Macedonia': 'Macedonia',
+  'North Macedonia': 'Macedonia',
+  'UAE': 'United Arab Emirates',
+  'Emirates': 'United Arab Emirates',
+  'Bosnia': 'Bosnia and Herz.',
+  'Dominican Republic': 'Dominican Rep.',
+  'Equatorial Guinea': 'Eq. Guinea',
+  'Solomon Islands': 'Solomon Is.',
+  'Palestinian': 'Palestine',
+  'Gaza Strip': 'Palestine',
+};
 
-const NEWS_CITIES = [
-  ['Kyiv', 50.45, 30.52], ['Gaza', 31.50, 34.47], ['Moscow', 55.76, 37.62],
-  ['Tehran', 35.69, 51.39], ['Beijing', 39.90, 116.40], ['Taipei', 25.03, 121.57],
-  ['Khartoum', 15.50, 32.56], ['London', 51.51, -0.13], ['Damascus', 33.51, 36.29],
-];
+const SHORT_NAMES = {
+  'United States of America': 'USA',
+  'United Kingdom': 'UK',
+  'Dem. Rep. Congo': 'DR Congo',
+  'Central African Rep.': 'CAR',
+  'Dominican Rep.': 'Dom. Rep.',
+  'Bosnia and Herz.': 'Bosnia',
+  'Antigua and Barb.': 'Antigua',
+  'Eq. Guinea': 'Eq. Guinea',
+  'S. Sudan': 'S. Sudan',
+  'St. Vin. and Gren.': 'St. Vincent',
+  'St. Kitts and Nevis': 'St. Kitts',
+  'St. Pierre and Miquelon': 'St. Pierre',
+  'St-Barthélemy': 'St. Barts',
+  'St-Martin': 'St. Martin',
+  'São Tomé and Principe': 'São Tomé',
+  'Fr. S. Antarctic Lands': 'Fr. Antarctic',
+  'Fr. Polynesia': 'Fr. Polynesia',
+  'Heard I. and McDonald Is.': 'Heard Is.',
+  'Br. Indian Ocean Ter.': 'BIOT',
+  'N. Mariana Is.': 'N. Mariana',
+  'U.S. Virgin Is.': 'USVI',
+  'British Virgin Is.': 'UKVI',
+  'Turks and Caicos Is.': 'Turks & Caicos',
+  'Wallis and Futuna Is.': 'Wallis',
+  'Marshall Is.': 'Marshall',
+  'Solomon Is.': 'Solomon',
+  'Cook Is.': 'Cook',
+  'Cayman Is.': 'Cayman',
+  'Faeroe Is.': 'Faroe',
+  'Falkland Is.': 'Falkland',
+  'Pitcairn Is.': 'Pitcairn',
+  'S. Geo. and the Is.': 'S. Georgia',
+  'United Arab Emirates': 'UAE',
+  'Papua New Guinea': 'PNG',
+  'Trinidad and Tobago': 'Trinidad',
+  'Timor-Leste': 'Timor',
+};
+
+function normalizeCountry(name) {
+  if (!name) return null;
+  const t = name.trim();
+  return EVENT_COUNTRY_ALIASES[t] || t;
+}
+
+function shortCountryName(name) {
+  if (SHORT_NAMES[name]) return SHORT_NAMES[name];
+  if (name.length <= 14) return name;
+  return name.replace(' and ', ' & ').slice(0, 14);
+}
 
 export function sevColor(s) {
   if (s >= 0.7) return '#ff5544';
@@ -71,13 +127,34 @@ function subsolarDirection(date) {
   return new THREE.Vector3(-x, -y, -z).normalize();
 }
 
+function ringCentroid(ring) {
+  let area = 0, cx = 0, cy = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [x0, y0] = ring[i], [x1, y1] = ring[i + 1];
+    const f = x0 * y1 - x1 * y0;
+    area += f;
+    cx += (x0 + x1) * f;
+    cy += (y0 + y1) * f;
+  }
+  if (Math.abs(area) < 1e-9) return ring[0];
+  area *= 0.5;
+  return [cy / (6 * area), cx / (6 * area)]; // lat, lon
+}
+
 function featureCentroid(feature) {
-  const coords = feature.geometry.type === 'Polygon'
-    ? feature.geometry.coordinates[0]
-    : feature.geometry.coordinates[0][0];
-  let sx = 0, sy = 0;
-  for (const [lon, lat] of coords) { sx += lon; sy += lat; }
-  return [sy / coords.length, sx / coords.length];
+  const polys = feature.geometry.type === 'Polygon'
+    ? [feature.geometry.coordinates]
+    : feature.geometry.coordinates;
+  let best = null, bestLen = -1;
+  for (const poly of polys) {
+    const ring = poly[0];
+    if (ring.length > bestLen) {
+      best = ring;
+      bestLen = ring.length;
+    }
+  }
+  const [lat, lon] = ringCentroid(best);
+  return [lat, lon];
 }
 
 function biomeGradient(ctx, H) {
@@ -191,30 +268,31 @@ function buildBorders(bordersMesh) {
   );
 }
 
-function makeLabelSprite(text, { fontSize = 22, color = '#c8d4e0', tier = 2, type = 'country' } = {}) {
+function makeLabelSprite(text, { fontSize = 14, bold = false } = {}) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
-  const font = `500 ${fontSize}px Inter, system-ui, sans-serif`;
+  const font = `${bold ? 600 : 500} ${fontSize}px Inter, system-ui, sans-serif`;
   ctx.font = font;
   const tw = ctx.measureText(text).width;
-  const pad = 4;
+  const pad = 3;
   canvas.width = Math.ceil(tw + pad * 2);
-  canvas.height = Math.ceil(fontSize * 1.35 + pad * 2);
+  canvas.height = Math.ceil(fontSize * 1.3 + pad * 2);
   ctx.font = font;
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
-  // Subtle dark outline for legibility — no bulky background boxes
-  ctx.strokeStyle = 'rgba(4, 8, 16, 0.85)';
-  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(4, 8, 16, 0.9)';
+  ctx.lineWidth = 2.5;
   ctx.lineJoin = 'round';
   ctx.strokeText(text, canvas.width / 2, canvas.height / 2);
-  ctx.fillStyle = color;
+  ctx.fillStyle = '#ffffff';
   ctx.fillText(text, canvas.width / 2, canvas.height / 2);
   const tex = new THREE.CanvasTexture(canvas);
   tex.minFilter = THREE.LinearFilter;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false });
+  const mat = new THREE.SpriteMaterial({
+    map: tex, transparent: true, depthTest: true, depthWrite: false, color: 0x9aabb8,
+  });
   const sprite = new THREE.Sprite(mat);
-  sprite.userData = { type, tier, aspect: canvas.width / canvas.height };
+  sprite.userData = { type: 'country', aspect: canvas.width / canvas.height };
   return sprite;
 }
 
@@ -335,6 +413,9 @@ export class Globe {
     this.onSelect = onSelect || (() => {});
     this.markers = new THREE.Group();
     this.labels = new THREE.Group();
+    this._labelIndex = new Map();
+    this._eventCountries = new Set();
+    this._proj = new THREE.Vector3();
     this.selectedId = null;
     this.labelsVisible = true;
     this._flyAnim = null;
@@ -412,42 +493,67 @@ export class Globe {
       color: 0x8899bb, size: 0.05, sizeAttenuation: true, transparent: true, opacity: 0.7,
     })));
 
-    this._buildLabels();
+    this._buildLabels(countries);
     this.scene.add(this.labels);
     this.scene.add(this.markers);
     this._clock = new THREE.Clock();
     this.renderer.setAnimationLoop(() => this._tick());
   }
 
-  _buildLabels() {
-    for (const c of COUNTRY_LABELS) {
-      const sprite = makeLabelSprite(c.short, {
-        fontSize: c.tier === 1 ? 24 : 20,
-        color: c.tier === 1 ? '#e8eef4' : '#9aa8b8',
-        tier: c.tier,
-        type: 'country',
-      });
-      sprite.position.copy(latLonToVec3(c.lat, c.lon, 1.018));
+  _buildLabels(countriesGeo) {
+    for (const f of countriesGeo.features) {
+      const name = f.properties?.name;
+      if (!name) continue;
+      const [lat, lon] = featureCentroid(f);
+      const sprite = makeLabelSprite(shortCountryName(name), { fontSize: 13 });
+      sprite.position.copy(latLonToVec3(lat, lon, 1.016));
+      sprite.userData.countryName = name;
+      sprite.userData.hasEvent = false;
       this.labels.add(sprite);
-    }
-    for (const [name, lat, lon] of NEWS_CITIES) {
-      const sprite = makeLabelSprite(name, { fontSize: 18, color: '#7a8a9a', tier: 4, type: 'city' });
-      sprite.position.copy(latLonToVec3(lat, lon, 1.014));
-      this.labels.add(sprite);
+      this._labelIndex.set(name, sprite);
     }
   }
 
   _labelScale(dist) {
-    // Shrink labels when camera pulls back; cap so they never dominate the globe
     const ref = 2.8;
-    return Math.min(0.028, 0.010 * (ref / dist));
+    return Math.min(0.022, 0.008 * (ref / dist));
   }
 
-  _labelTierVisible(tier, dist) {
-    if (tier === 1) return true;
-    if (tier === 2) return dist < 2.6;
-    if (tier === 3) return dist < 2.1;
-    return dist < 1.75; // cities
+  _labelScreenBox(sprite, h) {
+    this._proj.copy(sprite.position).project(this.camera);
+    if (this._proj.z > 1) return null;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const px = (this._proj.x * 0.5 + 0.5) * rect.width;
+    const py = (-this._proj.y * 0.5 + 0.5) * rect.height;
+    const aspect = sprite.userData.aspect || 1;
+    const d = this.camera.position.distanceTo(sprite.position);
+    const screenH = Math.max(8, (h / d) * rect.height * 0.42);
+    const screenW = screenH * aspect;
+    return { x: px, y: py, w: screenW + 6, h: screenH + 4 };
+  }
+
+  _boxesOverlap(a, b) {
+    return Math.abs(a.x - b.x) < (a.w + b.w) * 0.5
+      && Math.abs(a.y - b.y) < (a.h + b.h) * 0.5;
+  }
+
+  _updateEventCountries(events) {
+    this._eventCountries.clear();
+    for (const ev of events) {
+      const canon = normalizeCountry(ev.country);
+      if (canon) this._eventCountries.add(canon);
+      // Also try matching via place field last segment
+      if (ev.place) {
+        const last = ev.place.split(',').pop()?.trim();
+        const fromPlace = normalizeCountry(last);
+        if (fromPlace && this._labelIndex.has(fromPlace)) {
+          this._eventCountries.add(fromPlace);
+        }
+      }
+    }
+    for (const [name, sprite] of this._labelIndex) {
+      sprite.userData.hasEvent = this._eventCountries.has(name);
+    }
   }
 
   setLabelsVisible(v) {
@@ -472,6 +578,8 @@ export class Globe {
       this.markers.remove(this._selRing);
       this._selRing = null;
     }
+
+    this._updateEventCountries(events);
 
     for (const ev of events) {
       const group = createMarker(ev);
@@ -555,17 +663,46 @@ export class Globe {
 
     if (this.labelsVisible) {
       const dist = this.camera.position.length();
-      const h = this._labelScale(dist);
+      const baseH = this._labelScale(dist);
       const camDir = this.camera.position.clone().normalize();
+      const candidates = [];
+
       for (const s of this.labels.children) {
-        const tier = s.userData.tier || 3;
         const facing = s.position.clone().normalize().dot(camDir);
-        const show = this._labelTierVisible(tier, dist) && facing > 0.15;
-        s.visible = show;
-        if (!show) continue;
+        if (facing < 0.1) { s.visible = false; continue; }
+        candidates.push({ sprite: s, facing, hasEvent: !!s.userData.hasEvent });
+      }
+
+      // Event countries first, then by how face-on they are to the camera
+      candidates.sort((a, b) => (b.hasEvent - a.hasEvent) || (b.facing - a.facing));
+
+      const placed = [];
+      const showAll = dist < 1.85; // zoomed in: label every facing country
+      for (const { sprite: s, facing, hasEvent } of candidates) {
+        const h = hasEvent ? baseH * 1.12 : baseH * (dist < 1.9 ? 1 : dist < 2.4 ? 0.92 : 0.8);
+        const box = this._labelScreenBox(s, h);
+        if (!box) { s.visible = false; continue; }
+
+        let blocked = false;
+        if (!showAll) {
+          for (const p of placed) {
+            if (this._boxesOverlap(box, p)) {
+              // Event countries always show; others hide when crowded
+              if (!hasEvent) { blocked = true; break; }
+            }
+          }
+        }
+
+        if (blocked) { s.visible = false; continue; }
+
+        placed.push({ ...box, hasEvent });
+        s.visible = true;
         const aspect = s.userData.aspect || 1;
         s.scale.set(h * aspect, h, 1);
-        s.material.opacity = Math.min(1, Math.max(0.25, facing * 1.1));
+        s.material.color.setHex(hasEvent ? 0xe8f2ff : 0x8a9aaa);
+        s.material.opacity = hasEvent
+          ? Math.min(1, 0.55 + facing * 0.45)
+          : Math.min(0.9, 0.3 + facing * 0.55);
       }
     }
 
