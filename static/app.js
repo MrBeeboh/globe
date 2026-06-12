@@ -1,5 +1,5 @@
 /* App shell: plugin-driven layers, events, intel desk, ingest status. */
-import { Globe, sevColor, catColor } from '/static/globe.js?v=16';
+import { Globe, sevColor, catColor } from '/static/globe.js?v=17';
 import { extractGpsFromImage } from '/static/osint.js';
 
 const CATEGORIES = ['conflict', 'unrest', 'military', 'diplomacy', 'disaster', 'hazard', 'other'];

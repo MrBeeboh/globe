@@ -1,5 +1,5 @@
 /* Professional globe renderer: procedural basemap, atmosphere, labels, event markers. */
-console.log('[globe] renderer v16 — pole fixes active');
+console.log('[globe] renderer v17 — terminator shading fix');
 import * as THREE from 'three';
 import { OrbitControls } from '/static/vendor/OrbitControls.js';
 
@@ -720,36 +720,31 @@ const GLOBE_FRAG = `
     float isWater = smoothstep(0.14, 0.32, wm);
     vec3 N = normalize(vNormal);
     float d = dot(N, sunDir);
-    float day = smoothstep(-0.08, 0.18, d);
+    float day = smoothstep(-0.12, 0.22, d);
     vec3 viewDir = normalize(cameraPos - vWorldPos);
 
-    vec3 landNight = c * vec3(0.32, 0.30, 0.28);
-    vec3 landDay   = c * vec3(1.12, 1.06, 0.98);
-    vec3 landCol = mix(landNight, landDay, day);
-    float term = smoothstep(0.0, 0.08, d) * (1.0 - smoothstep(0.08, 0.25, d));
-    landCol += vec3(0.22, 0.14, 0.05) * term * c * 1.6;
-
-    float depth = wm;
+    // Night must be a dimmed, hue-consistent copy of the day color. Giving
+    // water its own day/night palette made the terminator zone drift
+    // green and read as a giant bullseye around the subsolar axis.
     vec3 deepW  = vec3(0.01, 0.07, 0.20);
     vec3 midW   = vec3(0.04, 0.28, 0.50);
     vec3 shelfW = vec3(0.12, 0.52, 0.65);
-    vec3 waterDay = mix(deepW, midW, smoothstep(0.3, 0.85, depth));
-    waterDay = mix(waterDay, shelfW, smoothstep(0.14, 0.45, depth) * (1.0 - smoothstep(0.14, 0.45, depth) * 0.5));
-    vec3 waterNight = vec3(0.005, 0.03, 0.10);
-    vec3 waterCol = mix(waterNight, waterDay, day);
+    vec3 waterDay = mix(deepW, midW, smoothstep(0.3, 0.85, wm));
+    waterDay = mix(waterDay, shelfW, smoothstep(0.14, 0.45, wm) * (1.0 - smoothstep(0.14, 0.45, wm) * 0.5));
+    vec3 landDay = c * vec3(1.10, 1.05, 0.98);
+    vec3 dayCol = mix(landDay, waterDay, isWater);
+    vec3 col = dayCol * mix(vec3(0.26, 0.29, 0.38), vec3(1.0), day);
+
+    // Thin warm kiss right at the terminator, land only
+    float term = smoothstep(-0.06, 0.0, d) * (1.0 - smoothstep(0.0, 0.10, d));
+    col += vec3(0.10, 0.05, 0.015) * term * (1.0 - isWater);
 
     vec3 refl = reflect(-sunDir, N);
-    float spec = pow(max(dot(refl, viewDir), 0.0), 28.0) * day * isWater;
-    waterCol += vec3(0.55, 0.82, 1.0) * spec * 0.45;
-
-    vec3 col = mix(landCol, waterCol, isWater);
+    float spec = pow(max(dot(refl, viewDir), 0.0), 36.0) * day * isWater;
+    col += vec3(0.50, 0.70, 0.90) * spec * 0.30;
 
     float rim = pow(1.0 - max(dot(N, viewDir), 0.0), 2.5);
-    col += mix(
-      vec3(0.55, 0.42, 0.18) * 0.22,
-      vec3(0.25, 0.55, 0.75) * 0.28,
-      isWater
-    ) * rim * smoothstep(-0.05, 0.2, d);
+    col += vec3(0.20, 0.40, 0.60) * rim * (0.10 + 0.18 * day);
 
     gl_FragColor = vec4(col, 1.0);
   }`;
