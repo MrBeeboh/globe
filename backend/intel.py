@@ -14,12 +14,14 @@ _cache: dict[str, dict] = {
     "flights": {"ts": 0, "data": [], "error": ""},
     "satellites": {"ts": 0, "data": [], "error": ""},
     "fires": {"ts": 0, "data": [], "error": ""},
+    "vessels": {"ts": 0, "data": [], "error": "", "source": ""},
 }
 
 TTL = {
     "flights": 90,
     "satellites": 45,
     "fires": 600,
+    "vessels": 120,
 }
 
 
@@ -167,6 +169,9 @@ def _fetch_fires() -> list[dict]:
 def get_intel(kind: str) -> dict:
     if kind not in _cache:
         return {"error": "unknown"}
+    if kind == "vessels":
+        from . import maritime
+        return maritime.get_vessels()
     if not _fresh(kind):
         try:
             if kind == "flights":
@@ -192,6 +197,10 @@ def get_intel(kind: str) -> dict:
 
 
 def refresh_all():
-    for kind in ("flights", "satellites", "fires"):
-        _cache[kind]["ts"] = 0
-        get_intel(kind)
+    for kind in ("flights", "satellites", "fires", "vessels"):
+        if kind == "vessels":
+            from . import maritime
+            maritime.refresh()
+        else:
+            _cache[kind]["ts"] = 0
+            get_intel(kind)

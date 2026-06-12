@@ -102,19 +102,29 @@ function shortCountryName(name) {
 }
 
 export function sevColor(s) {
-  if (s >= 0.7) return '#c44038';
-  if (s >= 0.45) return '#d4882a';
-  return '#9a9080';
+  if (s >= 0.7) return '#ff2244';
+  if (s >= 0.45) return '#ffaa00';
+  return '#7a8a9a';
 }
 
 export const CAT_COLORS = {
-  conflict: '#e04040',
-  unrest: '#e88830',
-  military: '#4a88c8',
-  diplomacy: '#38a868',
-  disaster: '#d4a820',
-  hazard: '#a058c8',
-  other: '#9090a0',
+  conflict: '#ff2244',
+  unrest: '#ff7700',
+  military: '#00aaff',
+  diplomacy: '#00dd66',
+  disaster: '#ffdd00',
+  hazard: '#cc44ff',
+  other: '#8899aa',
+};
+
+const CAT_SHAPES = {
+  conflict: 'triangle',
+  unrest: 'diamond',
+  military: 'square',
+  diplomacy: 'circle',
+  disaster: 'star',
+  hazard: 'cross',
+  other: 'ring',
 };
 
 const ZONE_COLORS = { war: '#c44038', high: '#d4882a', elevated: '#b58a3a' };
@@ -127,11 +137,69 @@ const MARKER_PX = 24;
 const MARKER_WORLD = 0.011;
 const _symTexCache = new Map();
 
+function drawEventShape(ctx, cx, cy, shape, hex) {
+  ctx.fillStyle = hex;
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+  ctx.lineWidth = 1.25;
+  const stroke = () => { ctx.fill(); ctx.stroke(); };
+  if (shape === 'triangle') {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 8);
+    ctx.lineTo(cx + 7, cy + 6);
+    ctx.lineTo(cx - 7, cy + 6);
+    ctx.closePath();
+    stroke();
+  } else if (shape === 'diamond') {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 8);
+    ctx.lineTo(cx + 8, cy);
+    ctx.lineTo(cx, cy + 8);
+    ctx.lineTo(cx - 8, cy);
+    ctx.closePath();
+    stroke();
+  } else if (shape === 'square') {
+    ctx.fillRect(cx - 7, cy - 7, 14, 14);
+    ctx.strokeRect(cx - 7, cy - 7, 14, 14);
+  } else if (shape === 'star') {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = (i * Math.PI) / 5 - Math.PI / 2;
+      const rad = i % 2 ? 4 : 8;
+      const x = cx + Math.cos(a) * rad;
+      const y = cy + Math.sin(a) * rad;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    stroke();
+  } else if (shape === 'cross') {
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = hex;
+    ctx.beginPath();
+    ctx.moveTo(cx - 7, cy); ctx.lineTo(cx + 7, cy);
+    ctx.moveTo(cx, cy - 7); ctx.lineTo(cx, cy + 7);
+    ctx.stroke();
+    ctx.lineWidth = 1.25;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.stroke();
+  } else if (shape === 'ring') {
+    ctx.beginPath();
+    ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+    ctx.strokeStyle = hex;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+    stroke();
+  }
+}
+
 function eventDotTexture(category, high = false) {
   const cat = category in CAT_COLORS ? category : 'other';
   const key = `dot:${cat}:${high ? '1' : '0'}`;
   if (_symTexCache.has(key)) return _symTexCache.get(key);
   const hex = catColor(cat);
+  const shape = CAT_SHAPES[cat] || 'circle';
   const canvas = document.createElement('canvas');
   const pad = high ? 5 : 3;
   canvas.width = MARKER_PX + pad * 2;
@@ -139,21 +207,14 @@ function eventDotTexture(category, high = false) {
   const ctx = canvas.getContext('2d');
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
-  const r = 8;
   if (high) {
     ctx.beginPath();
-    ctx.arc(cx, cy, r + 3.5, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(201, 162, 39, 0.95)';
+    ctx.arc(cx, cy, 11, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 220, 60, 0.95)';
     ctx.lineWidth = 2;
     ctx.stroke();
   }
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = hex;
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  drawEventShape(ctx, cx, cy, shape, hex);
   const tex = new THREE.CanvasTexture(canvas);
   tex.minFilter = THREE.LinearFilter;
   _symTexCache.set(key, tex);
@@ -183,6 +244,14 @@ function intelDotTexture(hex, shape = 'circle') {
   } else if (shape === 'square') {
     ctx.fillRect(cx - 5, cy - 5, 10, 10);
     ctx.strokeRect(cx - 5, cy - 5, 10, 10);
+  } else if (shape === 'triangle') {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 6);
+    ctx.lineTo(cx + 6, cy + 5);
+    ctx.lineTo(cx - 6, cy + 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
   } else {
     ctx.beginPath();
     ctx.arc(cx, cy, 5, 0, Math.PI * 2);
@@ -251,16 +320,18 @@ export function latLonToVec3(lat, lon, r) {
   );
 }
 
+// Empirical alignment: day/night shading was ~2h (30°) east of geography.
+const SOLAR_LON_OFFSET = -30;
+
 function subsolarDirection(date) {
   const start = Date.UTC(date.getUTCFullYear(), 0, 0);
   const doy = (date.getTime() - start) / 86400000;
-  const decl = -23.44 * Math.cos(2 * Math.PI * (doy + 10) / 365.25) * Math.PI / 180;
+  const B = (2 * Math.PI * (doy - 81)) / 365;
+  const declDeg = Math.asin(0.39779 * Math.sin(B)) * 180 / Math.PI;
+  const eotMin = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B);
   const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
-  const ha = (utcHours - 12) * 15 * Math.PI / 180 + Math.PI;
-  const x = Math.cos(decl) * Math.cos(ha);
-  const y = Math.sin(decl);
-  const z = Math.cos(decl) * Math.sin(ha);
-  return new THREE.Vector3(-x, -y, -z).normalize();
+  const subsolarLon = (12 - utcHours - eotMin / 60) * 15 + SOLAR_LON_OFFSET;
+  return latLonToVec3(declDeg, subsolarLon, 1).normalize();
 }
 
 function ringCentroid(ring) {
@@ -313,7 +384,6 @@ function paintOcean(ctx, W, H) {
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
 
-  // Subtle swell bands
   ctx.globalAlpha = 0.07;
   for (let band = 0; band < 90; band++) {
     const y0 = (band / 90) * H;
@@ -417,10 +487,6 @@ function buildTexture(countriesGeo) {
     const x = (lon + 180) / 360 * W;
     ctx.moveTo(x, 0); ctx.lineTo(x, H);
   }
-  for (let lat = -60; lat <= 60; lat += 30) {
-    const y = (90 - lat) / 180 * H;
-    ctx.moveTo(0, y); ctx.lineTo(W, y);
-  }
   ctx.stroke();
 
   const tex = new THREE.CanvasTexture(cv);
@@ -518,22 +584,41 @@ function createZoneMarker(zone) {
   return group;
 }
 
-function buildTerminator(sunDir) {
-  const n = sunDir.clone().normalize();
-  const ref = Math.abs(n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-  const u = new THREE.Vector3().crossVectors(n, ref).normalize();
-  const v = new THREE.Vector3().crossVectors(n, u).normalize();
+function subsolarLatLon(sunDir) {
+  const s = sunDir.clone().normalize();
+  const declDeg = Math.asin(THREE.MathUtils.clamp(s.y, -1, 1)) * 180 / Math.PI;
+  const phi = (90 - declDeg) * Math.PI / 180;
+  const sinPhi = Math.sin(phi);
+  const theta = sinPhi > 1e-6 ? Math.atan2(s.z, -s.x) : 0;
+  const lon = theta * 180 / Math.PI - 180;
+  return { declRad: declDeg * Math.PI / 180, lon };
+}
+
+function terminatorPositions(sunDir, r = 1.006) {
+  const { declRad, lon: subLon } = subsolarLatLon(sunDir);
   const positions = [];
-  for (let i = 0; i <= 160; i++) {
-    const a = (i / 160) * Math.PI * 2;
-    const p = u.clone().multiplyScalar(Math.cos(a)).add(v.clone().multiplyScalar(Math.sin(a))).multiplyScalar(1.006);
+  const lonStep = 2.5;
+  for (let lon = -180; lon <= 180; lon += lonStep) {
+    const ha = (lon - subLon) * Math.PI / 180;
+    let latRad = 0;
+    if (Math.abs(declRad) > 1e-4) {
+      latRad = Math.atan(-Math.cos(ha) / Math.tan(declRad));
+    }
+    const latDeg = latRad * 180 / Math.PI;
+    if (Math.abs(latDeg) > 89) continue;
+    const p = latLonToVec3(latDeg, lon, r);
     positions.push(p.x, p.y, p.z);
   }
+  return positions;
+}
+
+function buildTerminator(sunDir) {
+  const positions = terminatorPositions(sunDir);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   return new THREE.Line(
     geo,
-    new THREE.LineBasicMaterial({ color: 0xc9a227, transparent: true, opacity: 0.55, depthWrite: false })
+    new THREE.LineBasicMaterial({ color: 0xc9a227, transparent: true, opacity: 0.72, depthWrite: false })
   );
 }
 
@@ -565,14 +650,12 @@ const GLOBE_FRAG = `
     float day = smoothstep(-0.08, 0.18, d);
     vec3 viewDir = normalize(cameraPos - vWorldPos);
 
-    // Land
     vec3 landNight = c * vec3(0.32, 0.30, 0.28);
     vec3 landDay   = c * vec3(1.12, 1.06, 0.98);
     vec3 landCol = mix(landNight, landDay, day);
     float term = smoothstep(0.0, 0.08, d) * (1.0 - smoothstep(0.08, 0.25, d));
     landCol += vec3(0.22, 0.14, 0.05) * term * c * 1.6;
 
-    // Water — depth from mask (deep blue → turquoise shelf)
     float depth = wm;
     vec3 deepW  = vec3(0.01, 0.07, 0.20);
     vec3 midW   = vec3(0.04, 0.28, 0.50);
@@ -582,14 +665,12 @@ const GLOBE_FRAG = `
     vec3 waterNight = vec3(0.005, 0.03, 0.10);
     vec3 waterCol = mix(waterNight, waterDay, day);
 
-    // Sun glint on open water
     vec3 refl = reflect(-sunDir, N);
     float spec = pow(max(dot(refl, viewDir), 0.0), 28.0) * day * isWater;
     waterCol += vec3(0.55, 0.82, 1.0) * spec * 0.45;
 
     vec3 col = mix(landCol, waterCol, isWater);
 
-    // Rim: warm on land, cool blue on water
     float rim = pow(1.0 - max(dot(N, viewDir), 0.0), 2.5);
     col += mix(
       vec3(0.55, 0.42, 0.18) * 0.22,
@@ -628,8 +709,10 @@ export class Globe {
     this.zones = new THREE.Group();
     this.heatmap = new THREE.Group();
     this.flights = new THREE.Group();
+    this.vessels = new THREE.Group();
     this.fires = new THREE.Group();
     this.satellites = new THREE.Group();
+    this.osintPin = new THREE.Group();
     this.labels = new THREE.Group();
     this._labelIndex = new Map();
     this._eventCountries = new Set();
@@ -640,6 +723,7 @@ export class Globe {
     this.zonesVisible = true;
     this.heatmapVisible = false;
     this.flightsVisible = false;
+    this.vesselsVisible = false;
     this.firesVisible = false;
     this.satellitesVisible = false;
     this.photoEarth = false;
@@ -675,6 +759,8 @@ export class Globe {
     this.controls.minDistance = 1.3;
     this.controls.maxDistance = 5.5;
     this.controls.enablePan = false;
+    this.controls.minPolarAngle = 0.15;
+    this.controls.maxPolarAngle = Math.PI - 0.15;
     this.controls.autoRotate = true;
     this.controls.autoRotateSpeed = 0.15;
     this.controls.addEventListener('start', () => { this.controls.autoRotate = false; });
@@ -708,6 +794,26 @@ export class Globe {
       fragmentShader: GLOBE_FRAG,
     });
     this._globeMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), this._globeMat);
+    // Fix pole UVs to eliminate bullseye ring artifacts at the poles.
+    // Standard SphereGeometry sets UV.y=0 at the north pole, creating a sharp
+    // UV gradient across the polar triangle-fan that renders as concentric rings.
+    // Nudge to match the adjacent latitudinal ring — no mid-latitude vertices
+    // are touched, so no green smear.
+    (function fixPoleUVs(geo) {
+      const pos = geo.attributes.position;
+      const uv = geo.attributes.uv;
+      const hSegs = 96;
+      const eps = 1 / hSegs;
+      for (let i = 0; i < pos.count; i++) {
+        const y = pos.getY(i);
+        if (y > 0.999) {
+          uv.setY(i, eps);
+        } else if (y < -0.999) {
+          uv.setY(i, 1 - eps);
+        }
+      }
+      uv.needsUpdate = true;
+    })(this._globeMesh.geometry);
     this.scene.add(this._globeMesh);
 
     // Offline photo earth (bundled 2K texture)
@@ -752,7 +858,9 @@ export class Globe {
     this.scene.add(this.heatmap);
     this.scene.add(this.fires);
     this.scene.add(this.flights);
+    this.scene.add(this.vessels);
     this.scene.add(this.satellites);
+    this.scene.add(this.osintPin);
     this.scene.add(this.zones);
     this.scene.add(this.markers);
     this._clock = new THREE.Clock();
@@ -832,6 +940,27 @@ export class Globe {
     this._setIntelGroup(this.flights, items, { color: '#38b0d8', shape: 'diamond', size: 0.005 });
   }
 
+  setVessels(items) {
+    this._setIntelGroup(this.vessels, items, { color: '#2a88c8', shape: 'triangle', size: 0.006 });
+  }
+
+  setOsintPin(pin) {
+    for (const child of [...this.osintPin.children]) {
+      if (child.material?.map) child.material.map.dispose();
+      child.material?.dispose();
+      this.osintPin.remove(child);
+    }
+    if (!pin || pin.lat == null || pin.lon == null) return;
+    const tex = intelDotTexture('#ff40a0', 'diamond');
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthWrite: false, color: 0xffffff,
+    }));
+    sprite.scale.set(0.012, 0.012, 1);
+    sprite.position.copy(latLonToVec3(pin.lat, pin.lon, 1.004));
+    sprite.userData.osint = pin;
+    this.osintPin.add(sprite);
+  }
+
   setFires(items) {
     this._setIntelGroup(this.fires, items, { color: '#ff6020', shape: 'circle', size: 0.007 });
   }
@@ -840,7 +969,7 @@ export class Globe {
     this._setIntelGroup(this.satellites, items, { color: '#e8e040', shape: 'square', size: 0.009 });
   }
 
-  setLayers({ events, zones, heatmap, flights, fires, satellites, photoEarth,
+  setLayers({ events, zones, heatmap, flights, vessels, fires, satellites, photoEarth,
                 labels, dayNight, liveSun, autoRotate } = {}) {
     if (events !== undefined) {
       this.eventsVisible = events;
@@ -857,6 +986,10 @@ export class Globe {
     if (flights !== undefined) {
       this.flightsVisible = flights;
       this.flights.visible = flights;
+    }
+    if (vessels !== undefined) {
+      this.vesselsVisible = vessels;
+      this.vessels.visible = vessels;
     }
     if (fires !== undefined) {
       this.firesVisible = fires;
@@ -1000,17 +1133,11 @@ export class Globe {
     const sun = this.liveSun ? subsolarDirection(new Date()) : this._frozenSun;
     if (this.sunUniform) this.sunUniform.value = sun;
     if (this._terminator) {
-      const n = sun.clone().normalize();
-      const ref = Math.abs(n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-      const u = new THREE.Vector3().crossVectors(n, ref).normalize();
-      const v = new THREE.Vector3().crossVectors(n, u).normalize();
-      const pos = this._terminator.geometry.attributes.position;
-      for (let i = 0; i <= 160; i++) {
-        const a = (i / 160) * Math.PI * 2;
-        const p = u.clone().multiplyScalar(Math.cos(a)).add(v.clone().multiplyScalar(Math.sin(a))).multiplyScalar(1.006);
-        pos.setXYZ(i, p.x, p.y, p.z);
-      }
-      pos.needsUpdate = true;
+      const pts = terminatorPositions(sun);
+      this._terminator.geometry.setAttribute(
+        'position',
+        new THREE.BufferAttribute(new Float32Array(pts), 3)
+      );
       this._terminator.visible = this.dayNightVisible;
     }
     this.camUniform && this.camUniform.value.copy(this.camera.position);

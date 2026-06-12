@@ -1,0 +1,23 @@
+{
+  "name": "Globe",
+  "tagline": "Open Geospatial Intelligence",
+  "version": "2.0",
+  "plugins": [
+    {"id": "events", "name": "Events", "category": "Core", "kind": "layer", "layer": "events", "color": "#c44038", "default": true, "description": "GDELT, RSS, USGS & GDACS headlines"},
+    {"id": "zones", "name": "Conflict Zones", "category": "Core", "kind": "layer", "layer": "zones", "color": "#d4882a", "default": true, "description": "Static tension zone markers"},
+    {"id": "heatmap", "name": "Density Heatmap", "category": "Core", "kind": "layer", "layer": "heatmap", "color": "#a058c8", "default": false, "description": "Client-side event density grid"},
+    {"id": "flights", "name": "Live Flights", "category": "Telemetry", "kind": "intel", "layer": "flights", "api": "/api/intel/flights", "color": "#38b0d8", "default": false, "shortcut": "f", "poll_sec": 90, "description": "OpenSky ADS-B aircraft"},
+    {"id": "vessels", "name": "Maritime AIS", "category": "Telemetry", "kind": "intel", "layer": "vessels", "api": "/api/intel/vessels", "color": "#2a88c8", "default": false, "shortcut": "v", "poll_sec": 120, "description": "Live vessel positions (Digitraffic + conflict bbox)"},
+    {"id": "fires", "name": "Active Fires", "category": "Telemetry", "kind": "intel", "layer": "fires", "api": "/api/intel/fires", "color": "#ff6020", "default": false, "poll_sec": 600, "description": "NASA EONET & FIRMS VIIRS"},
+    {"id": "satellites", "name": "Satellites", "category": "Telemetry", "kind": "intel", "layer": "satellites", "api": "/api/intel/satellites", "color": "#e8e040", "default": false, "poll_sec": 45, "description": "ISS & Tiangong"},
+    {"id": "photoEarth", "name": "Photo Earth", "category": "Display", "kind": "layer", "layer": "photoEarth", "color": "#6a9a6e", "default": false, "description": "2K satellite texture overlay"},
+    {"id": "labels", "name": "Country Labels", "category": "Display", "kind": "layer", "layer": "labels", "color": "#c9a227", "default": true, "shortcut": "l", "description": "Country name sprites"},
+    {"id": "dayNight", "name": "Day / Night Line", "category": "Display", "kind": "layer", "layer": "dayNight", "color": "#7a9472", "default": true, "shortcut": "d", "description": "Subsolar terminator ring"},
+    {"id": "liveSun", "name": "Live Sun Position", "category": "Display", "kind": "layer", "layer": "liveSun", "color": "#9a948c", "default": true, "description": "Real-time solar lighting"},
+    {"id": "autoRotate", "name": "Auto Rotate", "category": "Display", "kind": "layer", "layer": "autoRotate", "color": "#7a756e", "default": true, "shortcut": "a", "description": "Slow globe rotation"},
+    {"id": "cctv", "name": "CCTV", "category": "Intel Desk", "kind": "desk", "tab": "cctv", "description": "Conflict-zone live cameras"},
+    {"id": "youtube", "name": "YouTube News", "category": "Intel Desk", "kind": "desk", "tab": "youtube", "description": "Live news streams"},
+    {"id": "osint", "name": "OSINT Geolocate", "category": "Intel Desk", "kind": "desk", "tab": "osint", "description": "Image EXIF & coordinate pinning"},
+    {"id": "recon", "name": "RECON", "category": "Intel Desk", "kind": "desk", "tab": "recon", "description": "DNS, headers & port scan"}
+  ]
+}

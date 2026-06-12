@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import db, ingest, intel, recon, schedule
+from . import cctv, db, ingest, intel, osint, plugins, recon, schedule
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
         _scheduler = None
 
 
-app = FastAPI(title="globe", lifespan=lifespan)
+app = FastAPI(title="Globe — Open Geospatial Intelligence", lifespan=lifespan)
 
 
 @app.get("/api/health")
@@ -70,19 +70,31 @@ def event_related(event_id: str, limit: int = Query(8, ge=1, le=20)):
     return {"related": db.related_events(event_id, limit)}
 
 
+@app.get("/api/plugins")
+def plugin_registry():
+    return plugins.get_registry(ROOT)
+
+
 @app.get("/api/intel/{kind}")
 def intel_feed(kind: str):
-    if kind not in ("flights", "satellites", "fires"):
+    if kind not in ("flights", "satellites", "fires", "vessels"):
         return {"error": "unknown kind", "items": []}
     return intel.get_intel(kind)
 
 
+class GeocodeRequest(BaseModel):
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=180)
+
+
+@app.post("/api/osint/geocode")
+def osint_geocode(body: GeocodeRequest):
+    return osint.reverse_geocode(body.lat, body.lon)
+
+
 @app.get("/api/cctv")
 def cctv_feeds():
-    import json
-    path = os.path.join(ROOT, "data", "cctv-feeds.json")
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    return cctv.get_feeds(ROOT)
 
 
 @app.get("/api/youtube")
