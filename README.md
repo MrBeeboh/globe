@@ -25,6 +25,10 @@ UI, and a single amber→red severity palette.
 Events are deduplicated by id and source URL, severity-scored 0–1, stored in
 SQLite with FTS5 full-text search, and pruned after 14 days.
 
+**Update cadence:** RSS every 10 min, GDELT/USGS every 15 min, GDACS every 20 min.
+The UI re-fetches the local database every 60 s. Click **↻ Refresh** (or press `r`)
+to pull all feeds immediately when something is breaking fast.
+
 ## Run
 
 ```bash
@@ -59,6 +63,7 @@ backend/
 - `GET /api/events?since_hours=72&category=conflict,hazard&min_severity=0.45&q=sudan&limit=1500`
 - `GET /api/events/{id}`
 - `GET /api/stats` — counts, per-channel ingest log
+- `POST /api/refresh` — force immediate ingest from all feeds
 - `GET /api/health`
 
 ## Env

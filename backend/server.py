@@ -15,6 +15,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NO_INGEST = os.environ.get("GLOBE_NO_INGEST") == "1"
+_refresh_lock = threading.Lock()
 
 
 @asynccontextmanager
@@ -63,6 +64,22 @@ def event(event_id: str):
 @app.get("/api/stats")
 def stats():
     return db.stats()
+
+
+@app.post("/api/refresh")
+def force_refresh():
+    """Pull all feeds immediately (GDELT, USGS, GDACS, RSS)."""
+    if NO_INGEST:
+        return {"ok": False, "error": "ingest disabled (GLOBE_NO_INGEST=1)"}
+    if not _refresh_lock.acquire(blocking=False):
+        return {"ok": False, "status": "busy", "error": "refresh already in progress"}
+    def _run():
+        try:
+            ingest.run_all()
+        finally:
+            _refresh_lock.release()
+    threading.Thread(target=_run, daemon=True).start()
+    return {"ok": True, "status": "started"}
 
 
 @app.get("/")

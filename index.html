@@ -80,8 +80,11 @@
   <div id="feed"></div>
   <footer id="ingest-bar">
     <div class="ingest-head">
-      <span class="label">Data channels</span>
-      <span id="refresh-timer" class="refresh-timer">refresh in 60s</span>
+      <span class="label">Open-source feeds</span>
+      <div class="ingest-actions">
+        <button id="refresh-now" class="refresh-btn" title="Pull all feeds now (GDELT, USGS, GDACS, RSS)">↻ Refresh</button>
+        <span id="refresh-timer" class="refresh-timer">auto 60s</span>
+      </div>
     </div>
     <div id="ingest-channels"></div>
   </footer>

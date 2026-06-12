@@ -209,7 +209,16 @@ html, body {
   background: rgba(0,0,0,0.2);
 }
 .ingest-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.refresh-timer { font-family: var(--mono); font-size: 10px; color: var(--accent); }
+.ingest-actions { display: flex; align-items: center; gap: 8px; }
+.refresh-btn {
+  padding: 3px 9px; border-radius: var(--radius-pill);
+  background: rgba(201, 162, 39, 0.12); border: 1px solid rgba(201, 162, 39, 0.35);
+  color: var(--accent); font: inherit; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.03em; cursor: pointer; transition: all 0.15s;
+}
+.refresh-btn:hover:not(:disabled) { background: rgba(201, 162, 39, 0.22); border-color: var(--accent); }
+.refresh-btn:disabled { opacity: 0.5; cursor: wait; }
+.refresh-timer { font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
 #ingest-channels { display: flex; gap: 5px; flex-wrap: wrap; }
 .ingest-chip {
   font-size: 9px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;

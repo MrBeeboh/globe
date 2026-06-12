@@ -308,6 +308,41 @@ $('labels-toggle').onclick = (e) => {
 
 let searchTimer;
 let refreshCountdown = REFRESH_SEC;
+let refreshInFlight = false;
+
+async function forceRefresh() {
+  const btn = $('refresh-now');
+  if (refreshInFlight) return;
+  refreshInFlight = true;
+  btn.disabled = true;
+  const prevLabel = btn.textContent;
+  btn.textContent = 'Updating…';
+  try {
+    const r = await fetch('/api/refresh', { method: 'POST' });
+    const data = await r.json();
+    if (!data.ok) {
+      btn.textContent = data.status === 'busy' ? 'Busy…' : 'Failed';
+      setTimeout(() => { btn.textContent = prevLabel; }, 2000);
+      return;
+    }
+    const t0 = Date.now();
+    while (Date.now() - t0 < 45000) {
+      await new Promise((res) => setTimeout(res, 2000));
+      await fetchStats();
+      const anyRecent = [...$('ingest-channels').querySelectorAll('.ingest-chip.ok')].length > 0;
+      if (anyRecent && Date.now() - t0 > 4000) break;
+    }
+    await fetchEvents();
+    refreshCountdown = REFRESH_SEC;
+  } catch {
+    btn.textContent = 'Failed';
+    setTimeout(() => { btn.textContent = prevLabel; }, 2000);
+  } finally {
+    btn.disabled = false;
+    if (btn.textContent === 'Updating…') btn.textContent = prevLabel;
+    refreshInFlight = false;
+  }
+}
 
 function tickClock() {
   $('clock').textContent = new Date().toISOString().slice(0, 19).replace('T', ' ') + ' UTC';
@@ -320,13 +355,18 @@ function tickRefresh() {
     fetchEvents();
     fetchStats();
   }
-  $('refresh-timer').textContent = `refresh in ${refreshCountdown}s`;
+  $('refresh-timer').textContent = `auto ${refreshCountdown}s`;
 }
+
+$('refresh-now').onclick = forceRefresh;
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { closeDetail(); return; }
   if (e.key === '/' && document.activeElement !== $('search')) {
     e.preventDefault(); $('search').focus(); return;
+  }
+  if (e.key === 'r' && document.activeElement !== $('search') && !e.ctrlKey && !e.metaKey) {
+    forceRefresh(); return;
   }
   const evs = visibleEvents();
   if (!evs.length) return;
