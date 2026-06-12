@@ -866,26 +866,6 @@ export class Globe {
       fragmentShader: GLOBE_FRAG,
     });
     this._globeMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), this._globeMat);
-    // Fix pole UVs to eliminate bullseye ring artifacts at the poles.
-    // Standard SphereGeometry sets UV.y=0 at the north pole, creating a sharp
-    // UV gradient across the polar triangle-fan that renders as concentric rings.
-    // Nudge to match the adjacent latitudinal ring — no mid-latitude vertices
-    // are touched, so no green smear.
-    (function fixPoleUVs(geo) {
-      const pos = geo.attributes.position;
-      const uv = geo.attributes.uv;
-      const hSegs = 96;
-      const eps = 1 / hSegs;
-      for (let i = 0; i < pos.count; i++) {
-        const y = pos.getY(i);
-        if (y > 0.999) {
-          uv.setY(i, eps);
-        } else if (y < -0.999) {
-          uv.setY(i, 1 - eps);
-        }
-      }
-      uv.needsUpdate = true;
-    })(this._globeMesh.geometry);
     this.scene.add(this._globeMesh);
 
     // Offline photo earth (bundled 2K texture)
