@@ -3,11 +3,13 @@ import * as THREE from 'three';
 import { OrbitControls } from '/static/vendor/OrbitControls.js';
 
 const PALETTE = {
-  ocean: '#243028',
-  oceanDeep: '#121a16',
-  coast: 'rgba(200, 185, 155, 0.55)',
-  graticule: 'rgba(220, 200, 170, 0.05)',
-  border3d: 0xd8ccb8,
+  oceanDeep: '#061a30',
+  oceanMid: '#0c3d66',
+  oceanTropic: '#1565a0',
+  oceanShallow: '#2a9cc4',
+  coast: 'rgba(180, 230, 245, 0.75)',
+  graticule: 'rgba(255, 255, 255, 0.04)',
+  border3d: 0xc8e0ec,
   biomes: [
     [90, '#e8eef2'], [74, '#d0dde0'], [66, '#7a9a7c'], [58, '#3d6b3a'],
     [46, '#4a7a42'], [36, '#8a9a52'], [27, '#b8a070'], [20, '#c4a060'],
@@ -166,19 +168,113 @@ function biomeGradient(ctx, H) {
   return g;
 }
 
+function paintOcean(ctx, W, H) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, PALETTE.oceanDeep);
+  g.addColorStop(0.2, '#082540');
+  g.addColorStop(0.45, PALETTE.oceanTropic);
+  g.addColorStop(0.55, PALETTE.oceanTropic);
+  g.addColorStop(0.8, '#082540');
+  g.addColorStop(1, PALETTE.oceanDeep);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle swell bands
+  ctx.globalAlpha = 0.07;
+  for (let band = 0; band < 90; band++) {
+    const y0 = (band / 90) * H;
+    ctx.strokeStyle = band % 2 ? '#5ec8f0' : '#1a5a8a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 16) {
+      const y = y0 + Math.sin(x * 0.006 + band * 0.7) * 8 + Math.sin(x * 0.017) * 4;
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 0.035;
+  for (let i = 0; i < 20000; i++) {
+    const x = Math.random() * W, y = Math.random() * H;
+    ctx.fillStyle = Math.random() < 0.5 ? '#90e0ff' : '#ffffff';
+    ctx.fillRect(x, y, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawCountryPaths(ctx, countriesGeo, px, { fill, stroke, lineWidth = 1.2 } = {}) {
+  for (const f of countriesGeo.features) {
+    const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+    for (const poly of polys) {
+      ctx.beginPath();
+      for (const ring of poly) {
+        ring.forEach(([lon, lat], i) => {
+          const [x, y] = px(lon, lat);
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+      }
+      if (fill) ctx.fill('evenodd');
+      if (stroke) { ctx.lineWidth = lineWidth; ctx.stroke(); }
+    }
+  }
+}
+
 function buildTexture(countriesGeo) {
   const W = 4096, H = 2048;
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
+  const px = (lon, lat) => [(lon + 180) / 360 * W, (90 - lat) / 180 * H];
 
-  const og = ctx.createLinearGradient(0, 0, 0, H);
-  og.addColorStop(0, PALETTE.oceanDeep);
-  og.addColorStop(0.45, PALETTE.ocean);
-  og.addColorStop(0.55, PALETTE.ocean);
-  og.addColorStop(1, PALETTE.oceanDeep);
-  ctx.fillStyle = og;
-  ctx.fillRect(0, 0, W, H);
+  paintOcean(ctx, W, H);
+
+  // Water-depth mask: 1.0 = deep ocean, 0.55 = shallow shelf, 0.0 = land
+  const waterMask = document.createElement('canvas');
+  waterMask.width = W; waterMask.height = H;
+  const wctx = waterMask.getContext('2d');
+  wctx.fillStyle = '#fff';
+  wctx.fillRect(0, 0, W, H);
+
+  // Shallow coastal shelf
+  wctx.strokeStyle = 'rgb(140,140,140)';
+  wctx.lineWidth = 10;
+  wctx.lineJoin = 'round';
+  drawCountryPaths(wctx, countriesGeo, px, { stroke: true, lineWidth: 10 });
+
+  // Land mask cutout
+  wctx.fillStyle = '#000';
+  drawCountryPaths(wctx, countriesGeo, px, { fill: true });
+
+  // Coastal tint on base map
+  ctx.strokeStyle = 'rgba(48, 160, 190, 0.35)';
+  ctx.lineWidth = 6;
+  drawCountryPaths(ctx, countriesGeo, px, { stroke: true, lineWidth: 6 });
+
+  // Land layer with biome fill
+  const land = document.createElement('canvas');
+  land.width = W; land.height = H;
+  const lctx = land.getContext('2d');
+  lctx.fillStyle = '#fff';
+  drawCountryPaths(lctx, countriesGeo, px, { fill: true });
+  lctx.globalCompositeOperation = 'source-in';
+  lctx.fillStyle = biomeGradient(lctx, H);
+  lctx.fillRect(0, 0, W, H);
+  lctx.globalCompositeOperation = 'source-atop';
+  for (let i = 0; i < 6000; i++) {
+    const x = Math.random() * W, y = Math.random() * H;
+    lctx.fillStyle = Math.random() < 0.5 ? 'rgba(0,30,0,0.04)' : 'rgba(255,240,200,0.04)';
+    lctx.fillRect(x, y, 1 + Math.random() * 2, 1 + Math.random() * 2);
+  }
+  lctx.globalCompositeOperation = 'source-over';
+
+  ctx.shadowColor = 'rgba(120, 200, 230, 0.35)';
+  ctx.shadowBlur = 8;
+  ctx.drawImage(land, 0, 0);
+  ctx.shadowBlur = 0;
+
+  ctx.strokeStyle = PALETTE.coast;
+  ctx.lineWidth = 1.4;
+  drawCountryPaths(ctx, countriesGeo, px, { stroke: true, lineWidth: 1.4 });
 
   ctx.strokeStyle = PALETTE.graticule;
   ctx.lineWidth = 1;
@@ -193,62 +289,12 @@ function buildTexture(countriesGeo) {
   }
   ctx.stroke();
 
-  const px = (lon, lat) => [(lon + 180) / 360 * W, (90 - lat) / 180 * H];
-
-  const land = document.createElement('canvas');
-  land.width = W; land.height = H;
-  const lctx = land.getContext('2d');
-  lctx.fillStyle = '#fff';
-  for (const f of countriesGeo.features) {
-    const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
-    for (const poly of polys) {
-      lctx.beginPath();
-      for (const ring of poly) {
-        ring.forEach(([lon, lat], i) => {
-          const [x, y] = px(lon, lat);
-          i === 0 ? lctx.moveTo(x, y) : lctx.lineTo(x, y);
-        });
-        lctx.closePath();
-      }
-      lctx.fill('evenodd');
-    }
-  }
-  lctx.globalCompositeOperation = 'source-in';
-  lctx.fillStyle = biomeGradient(lctx, H);
-  lctx.fillRect(0, 0, W, H);
-  lctx.globalCompositeOperation = 'source-atop';
-  for (let i = 0; i < 8000; i++) {
-    const x = Math.random() * W, y = Math.random() * H;
-    lctx.fillStyle = Math.random() < 0.5 ? 'rgba(0,30,0,0.04)' : 'rgba(255,240,200,0.04)';
-    lctx.fillRect(x, y, 1 + Math.random() * 2, 1 + Math.random() * 2);
-  }
-  lctx.globalCompositeOperation = 'source-over';
-
-  ctx.shadowColor = 'rgba(180, 155, 110, 0.45)';
-  ctx.shadowBlur = 10;
-  ctx.drawImage(land, 0, 0);
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = PALETTE.coast;
-  ctx.lineWidth = 1.2;
-  for (const f of countriesGeo.features) {
-    const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
-    for (const poly of polys) {
-      ctx.beginPath();
-      for (const ring of poly) {
-        ring.forEach(([lon, lat], i) => {
-          const [x, y] = px(lon, lat);
-          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        });
-        ctx.closePath();
-      }
-      ctx.stroke();
-    }
-  }
-
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
-  return tex;
+  const waterTex = new THREE.CanvasTexture(waterMask);
+  waterTex.colorSpace = THREE.NoColorSpace;
+  return { map: tex, waterMap: waterTex };
 }
 
 function buildBorders(bordersMesh) {
@@ -368,6 +414,7 @@ const GLOBE_VERT = `
 
 const GLOBE_FRAG = `
   uniform sampler2D map;
+  uniform sampler2D waterMap;
   uniform vec3 sunDir;
   uniform vec3 cameraPos;
   varying vec2 vUv;
@@ -375,17 +422,45 @@ const GLOBE_FRAG = `
   varying vec3 vWorldPos;
   void main() {
     vec3 c = texture2D(map, vUv).rgb;
+    float wm = texture2D(waterMap, vUv).r;
+    float isWater = smoothstep(0.14, 0.32, wm);
     vec3 N = normalize(vNormal);
     float d = dot(N, sunDir);
     float day = smoothstep(-0.08, 0.18, d);
-    vec3 night = c * vec3(0.32, 0.30, 0.28);
-    vec3 dayC  = c * vec3(1.12, 1.06, 0.98);
-    vec3 col = mix(night, dayC, day);
-    float term = smoothstep(0.0, 0.08, d) * (1.0 - smoothstep(0.08, 0.25, d));
-    col += vec3(0.22, 0.14, 0.05) * term * c * 1.6;
     vec3 viewDir = normalize(cameraPos - vWorldPos);
+
+    // Land
+    vec3 landNight = c * vec3(0.32, 0.30, 0.28);
+    vec3 landDay   = c * vec3(1.12, 1.06, 0.98);
+    vec3 landCol = mix(landNight, landDay, day);
+    float term = smoothstep(0.0, 0.08, d) * (1.0 - smoothstep(0.08, 0.25, d));
+    landCol += vec3(0.22, 0.14, 0.05) * term * c * 1.6;
+
+    // Water — depth from mask (deep blue → turquoise shelf)
+    float depth = wm;
+    vec3 deepW  = vec3(0.01, 0.07, 0.20);
+    vec3 midW   = vec3(0.04, 0.28, 0.50);
+    vec3 shelfW = vec3(0.12, 0.52, 0.65);
+    vec3 waterDay = mix(deepW, midW, smoothstep(0.3, 0.85, depth));
+    waterDay = mix(waterDay, shelfW, smoothstep(0.14, 0.45, depth) * (1.0 - smoothstep(0.14, 0.45, depth) * 0.5));
+    vec3 waterNight = vec3(0.005, 0.03, 0.10);
+    vec3 waterCol = mix(waterNight, waterDay, day);
+
+    // Sun glint on open water
+    vec3 refl = reflect(-sunDir, N);
+    float spec = pow(max(dot(refl, viewDir), 0.0), 28.0) * day * isWater;
+    waterCol += vec3(0.55, 0.82, 1.0) * spec * 0.45;
+
+    vec3 col = mix(landCol, waterCol, isWater);
+
+    // Rim: warm on land, cool blue on water
     float rim = pow(1.0 - max(dot(N, viewDir), 0.0), 2.5);
-    col += vec3(0.55, 0.42, 0.18) * rim * 0.22 * smoothstep(-0.05, 0.2, d);
+    col += mix(
+      vec3(0.55, 0.42, 0.18) * 0.22,
+      vec3(0.25, 0.55, 0.75) * 0.28,
+      isWater
+    ) * rim * smoothstep(-0.05, 0.2, d);
+
     gl_FragColor = vec4(col, 1.0);
   }`;
 
@@ -401,8 +476,8 @@ const ATMOS_FRAG = `
     float sunDot = dot(N, sunDir);
     float rim = pow(1.0 - max(viewDot, 0.0), 4.0);
     float daySide = smoothstep(-0.1, 0.15, sunDot);
-    vec3 color = mix(vec3(0.12, 0.10, 0.08), vec3(0.55, 0.42, 0.22), daySide);
-    float intensity = rim * mix(0.04, 0.14, daySide);
+    vec3 color = mix(vec3(0.06, 0.08, 0.14), vec3(0.35, 0.60, 0.82), daySide);
+    float intensity = rim * mix(0.04, 0.16, daySide);
     gl_FragColor = vec4(color, intensity);
   }`;
 
@@ -422,7 +497,7 @@ export class Globe {
     this._selRing = null;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0c0b09);
+    this.scene.background = new THREE.Color(0x060a10);
 
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
     const sun = subsolarDirection(new Date());
@@ -464,8 +539,12 @@ export class Globe {
 
     this.sunUniform = { value: subsolarDirection(new Date()) };
     this.camUniform = { value: this.camera.position.clone() };
+    const { map, waterMap } = buildTexture(countries);
     const globeMat = new THREE.ShaderMaterial({
-      uniforms: { map: { value: buildTexture(countries) }, sunDir: this.sunUniform, cameraPos: this.camUniform },
+      uniforms: {
+        map: { value: map }, waterMap: { value: waterMap },
+        sunDir: this.sunUniform, cameraPos: this.camUniform,
+      },
       vertexShader: GLOBE_VERT,
       fragmentShader: GLOBE_FRAG,
     });
