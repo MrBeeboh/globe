@@ -257,7 +257,7 @@ function renderTicker(evs) {
   }
   const html = items.map((ev) =>
     `<span class="ticker-item">` +
-      `<span class="t-sev cat-shape cat-${ev.category}" style="background:${catColor(ev.category)}"></span>` +
+      `<span class="t-sev" style="background:${catColor(ev.category)}"></span>` +
       `<span class="t-cat">${esc(CAT_LABELS[ev.category])}</span>` +
       `<span class="t-title">${esc(ev.title)}</span>` +
       `<span class="t-cat">${timeAgo(ev.ts)}</span>` +
@@ -327,7 +327,7 @@ function renderFeed(evs) {
     el.dataset.id = ev.id;
     el.innerHTML =
       `<div class="row-top">` +
-        `<span class="sev-dot cat-shape cat-${ev.category}" style="background:${catColor(ev.category)}"></span>` +
+        `<span class="sev-dot" style="background:${catColor(ev.category)}"></span>` +
         `<span class="cat-badge cat-${ev.category}">${esc(CAT_LABELS[ev.category])}</span>` +
         `<span class="meta-src">${esc(ev.source)}</span>` +
         `<span class="meta-time">${timeAgo(ev.ts)}</span>` +

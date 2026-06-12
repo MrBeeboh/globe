@@ -123,80 +123,36 @@ export function catColor(category) {
   return CAT_COLORS[category] || CAT_COLORS.other;
 }
 
-const MARKER_PX = 28;
-const MARKER_WORLD = 0.013;
+const MARKER_PX = 24;
+const MARKER_WORLD = 0.011;
 const _symTexCache = new Map();
 
-function drawCatSymbol(ctx, cat, cx, cy, r) {
-  ctx.beginPath();
-  switch (cat) {
-    case 'conflict':
-      ctx.moveTo(cx, cy - r);
-      ctx.lineTo(cx - r * 0.87, cy + r * 0.5);
-      ctx.lineTo(cx + r * 0.87, cy + r * 0.5);
-      break;
-    case 'unrest':
-      ctx.moveTo(cx, cy - r);
-      ctx.lineTo(cx + r, cy);
-      ctx.lineTo(cx, cy + r);
-      ctx.lineTo(cx - r, cy);
-      break;
-    case 'military': {
-      const s = r * 0.78;
-      ctx.rect(cx - s, cy - s, s * 2, s * 2);
-      break;
-    }
-    case 'diplomacy':
-      ctx.arc(cx, cy, r * 0.78, 0, Math.PI * 2);
-      break;
-    case 'disaster':
-      for (let i = 0; i < 5; i++) {
-        const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
-        const x = cx + r * Math.cos(a);
-        const y = cy + r * Math.sin(a);
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
-      break;
-    case 'hazard':
-      for (let i = 0; i < 8; i++) {
-        const a = -Math.PI / 2 + (i * Math.PI) / 4;
-        const rr = i % 2 === 0 ? r : r * 0.38;
-        const x = cx + rr * Math.cos(a);
-        const y = cy + rr * Math.sin(a);
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
-      break;
-    default:
-      ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
-  }
-  ctx.closePath();
-}
-
-function symbolTexture(category, high = false) {
-  const cat = CAT_SHAPES_KEY(category);
-  const key = `${cat}:${high ? '1' : '0'}`;
+function eventDotTexture(category, high = false) {
+  const cat = category in CAT_COLORS ? category : 'other';
+  const key = `dot:${cat}:${high ? '1' : '0'}`;
   if (_symTexCache.has(key)) return _symTexCache.get(key);
   const hex = catColor(cat);
   const canvas = document.createElement('canvas');
-  const pad = high ? 6 : 4;
+  const pad = high ? 5 : 3;
   canvas.width = MARKER_PX + pad * 2;
   canvas.height = MARKER_PX + pad * 2;
   const ctx = canvas.getContext('2d');
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
-  const r = MARKER_PX * 0.38;
+  const r = 8;
   if (high) {
     ctx.beginPath();
-    ctx.arc(cx, cy, r + 5, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(201, 162, 39, 0.9)';
+    ctx.arc(cx, cy, r + 3.5, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(201, 162, 39, 0.95)';
     ctx.lineWidth = 2;
     ctx.stroke();
   }
-  drawCatSymbol(ctx, cat, cx, cy, r);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fillStyle = hex;
   ctx.fill();
-  ctx.strokeStyle = 'rgba(245, 240, 230, 0.55)';
-  ctx.lineWidth = 1.25;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+  ctx.lineWidth = 1;
   ctx.stroke();
   const tex = new THREE.CanvasTexture(canvas);
   tex.minFilter = THREE.LinearFilter;
@@ -204,9 +160,32 @@ function symbolTexture(category, high = false) {
   return tex;
 }
 
-function CAT_SHAPES_KEY(category) {
-  return ['conflict', 'unrest', 'military', 'diplomacy', 'disaster', 'hazard'].includes(category)
-    ? category : 'other';
+function zoneOutlineTexture(severity) {
+  const key = `zone:${severity}`;
+  if (_symTexCache.has(key)) return _symTexCache.get(key);
+  const hex = ZONE_COLORS[severity] || ZONE_COLORS.elevated;
+  const canvas = document.createElement('canvas');
+  canvas.width = 36;
+  canvas.height = 36;
+  const ctx = canvas.getContext('2d');
+  const cx = 18;
+  const cy = 18;
+  const r = 11;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r);
+  ctx.lineTo(cx + r, cy);
+  ctx.lineTo(cx, cy + r);
+  ctx.lineTo(cx - r, cy);
+  ctx.closePath();
+  ctx.strokeStyle = hex;
+  ctx.lineWidth = severity === 'war' ? 2.5 : 2;
+  ctx.globalAlpha = 0.75;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  _symTexCache.set(key, tex);
+  return tex;
 }
 
 let _heatBlobTex = null;
@@ -483,7 +462,7 @@ function createMarker(ev) {
   const high = ev.severity >= 0.7;
 
   const icon = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: symbolTexture(cat, high), transparent: true, depthWrite: false,
+    map: eventDotTexture(cat, high), transparent: true, depthWrite: false,
   }));
   icon.scale.set(MARKER_WORLD, MARKER_WORLD, 1);
   group.add(icon);
@@ -494,16 +473,11 @@ function createMarker(ev) {
 
 function createZoneMarker(zone) {
   const group = new THREE.Group();
-  const hex = ZONE_COLORS[zone.severity] || ZONE_COLORS.elevated;
-  const color = new THREE.Color(hex);
-  const base = MARKER_WORLD * 1.15;
-
-  const diamond = new THREE.Mesh(
-    new THREE.CircleGeometry(base * 0.6, 4),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false })
-  );
-  diamond.rotation.z = Math.PI / 4;
-  group.add(diamond);
+  const icon = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: zoneOutlineTexture(zone.severity), transparent: true, depthWrite: false,
+  }));
+  icon.scale.set(MARKER_WORLD * 1.55, MARKER_WORLD * 1.55, 1);
+  group.add(icon);
 
   group.userData.zone = zone;
   return group;
@@ -734,10 +708,9 @@ export class Globe {
     }
     for (const zone of zones) {
       const group = createZoneMarker(zone);
-      const pos = latLonToVec3(zone.lat, zone.lon, 1.007);
+      const pos = latLonToVec3(zone.lat, zone.lon, 1.002);
       group.position.copy(pos);
-      group.lookAt(pos.clone().multiplyScalar(2));
-      group.renderOrder = 1;
+      group.renderOrder = 0;
       this.zones.add(group);
     }
   }
@@ -860,13 +833,6 @@ export class Globe {
       });
       this.markers.remove(child);
     }
-    if (this._selRing) {
-      this._selRing.geometry.dispose();
-      this._selRing.material.dispose();
-      this.markers.remove(this._selRing);
-      this._selRing = null;
-    }
-
     this._updateEventCountries(events);
 
     for (const ev of events) {
@@ -882,26 +848,16 @@ export class Globe {
 
   setSelected(id) {
     this.selectedId = id;
-    if (this._selRing) {
-      this._selRing.geometry.dispose();
-      this._selRing.material.dispose();
-      this.markers.remove(this._selRing);
-      this._selRing = null;
-    }
     for (const g of this.markers.children) {
       const ev = g.userData.event;
       if (!ev) continue;
       const sel = ev.id === id;
       if (sel) {
-        const pos = latLonToVec3(ev.lat, ev.lon, 1.008);
-        this._selRing = new THREE.Mesh(
-          new THREE.RingGeometry(0.012, 0.016, 24),
-          new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false })
-        );
-        this._selRing.position.copy(pos);
-        this._selRing.lookAt(pos.clone().multiplyScalar(2));
-        this._selRing.renderOrder = 3;
-        this.markers.add(this._selRing);
+        const icon = g.children[0];
+        if (icon?.isSprite) icon.scale.set(MARKER_WORLD * 1.28, MARKER_WORLD * 1.28, 1);
+      } else {
+        const icon = g.children[0];
+        if (icon?.isSprite) icon.scale.set(MARKER_WORLD, MARKER_WORLD, 1);
       }
     }
   }
@@ -955,6 +911,12 @@ export class Globe {
     for (const g of this.markers.children) {
       if (!g.userData.event) continue;
       g.scale.setScalar(screenScale);
+      const icon = g.children[0];
+      const sel = g.userData.event.id === this.selectedId;
+      if (icon?.isSprite) {
+        const s = sel ? MARKER_WORLD * 1.28 : MARKER_WORLD;
+        icon.scale.set(s, s, 1);
+      }
     }
 
     if (this.labelsVisible) {
