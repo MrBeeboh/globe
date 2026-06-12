@@ -353,17 +353,14 @@ html, body {
 }
 .legend-title { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); }
 .legend-items { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-.legend-cats { margin-bottom: 4px; }
-.legend-sev { opacity: 0.85; }
-.leg-item { display: flex; align-items: center; gap: 4px; font-size: 9px; color: var(--text-secondary); font-weight: 500; }
+.legend-cats { margin-bottom: 2px; }
+.legend-note { font-size: 8px; color: var(--text-faint); letter-spacing: 0.03em; }
+.leg-item { display: flex; align-items: center; gap: 5px; font-size: 9px; color: var(--text-secondary); font-weight: 500; }
 .swatch { width: 8px; height: 8px; display: inline-block; flex-shrink: 0; }
 .swatch.cat-conflict { background: var(--cat-conflict); clip-path: polygon(50% 8%, 8% 92%, 92% 92%); border-radius: 0; }
 .swatch.cat-unrest { background: var(--cat-unrest); transform: rotate(45deg); border-radius: 1px; }
 .swatch.cat-military { background: var(--cat-military); border-radius: 1px; }
 .swatch.cat-hazard { background: var(--cat-hazard); clip-path: polygon(50% 0%, 62% 34%, 98% 34%, 68% 56%, 80% 92%, 50% 72%, 20% 92%, 32% 56%, 2% 34%, 38% 34%); border-radius: 0; }
-.swatch.sev-low { background: transparent; border: 1.5px solid var(--text-faint); border-radius: 50%; }
-.swatch.sev-med { background: transparent; border: 1.5px solid var(--text-secondary); border-radius: 50%; }
-.swatch.sev-high { background: transparent; border: 1.5px solid var(--accent); border-radius: 50%; box-shadow: 0 0 4px var(--accent); }
 .legend-hint { font-size: 9px; color: var(--text-faint); letter-spacing: 0.02em; margin-top: 2px; }
 .legend-hint kbd {
   font-family: var(--mono); font-size: 8px; padding: 1px 4px;

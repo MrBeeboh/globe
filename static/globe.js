@@ -172,18 +172,26 @@ function drawCatSymbol(ctx, cat, cx, cy, r) {
   ctx.closePath();
 }
 
-function symbolTexture(category) {
+function symbolTexture(category, high = false) {
   const cat = CAT_SHAPES_KEY(category);
-  if (_symTexCache.has(cat)) return _symTexCache.get(cat);
+  const key = `${cat}:${high ? '1' : '0'}`;
+  if (_symTexCache.has(key)) return _symTexCache.get(key);
   const hex = catColor(cat);
   const canvas = document.createElement('canvas');
-  const pad = 4;
+  const pad = high ? 6 : 4;
   canvas.width = MARKER_PX + pad * 2;
   canvas.height = MARKER_PX + pad * 2;
   const ctx = canvas.getContext('2d');
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
   const r = MARKER_PX * 0.38;
+  if (high) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 5, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(201, 162, 39, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
   drawCatSymbol(ctx, cat, cx, cy, r);
   ctx.fillStyle = hex;
   ctx.fill();
@@ -192,29 +200,13 @@ function symbolTexture(category) {
   ctx.stroke();
   const tex = new THREE.CanvasTexture(canvas);
   tex.minFilter = THREE.LinearFilter;
-  _symTexCache.set(cat, tex);
+  _symTexCache.set(key, tex);
   return tex;
 }
 
 function CAT_SHAPES_KEY(category) {
   return ['conflict', 'unrest', 'military', 'diplomacy', 'disaster', 'hazard'].includes(category)
     ? category : 'other';
-}
-
-let _ringTex = null;
-function markerRingTexture() {
-  if (_ringTex) return _ringTex;
-  const c = document.createElement('canvas');
-  c.width = 64; c.height = 64;
-  const ctx = c.getContext('2d');
-  ctx.strokeStyle = 'rgba(245, 240, 230, 0.7)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(32, 32, 24, 0, Math.PI * 2);
-  ctx.stroke();
-  _ringTex = new THREE.CanvasTexture(c);
-  _ringTex.minFilter = THREE.LinearFilter;
-  return _ringTex;
 }
 
 let _heatBlobTex = null;
@@ -488,21 +480,13 @@ function glowTexture(hex) {
 function createMarker(ev) {
   const group = new THREE.Group();
   const cat = ev.category || 'other';
+  const high = ev.severity >= 0.7;
 
   const icon = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: symbolTexture(cat), transparent: true, depthWrite: false,
+    map: symbolTexture(cat, high), transparent: true, depthWrite: false,
   }));
   icon.scale.set(MARKER_WORLD, MARKER_WORLD, 1);
   group.add(icon);
-
-  if (ev.severity >= 0.7) {
-    const ring = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: markerRingTexture(), transparent: true, opacity: 0.45, depthWrite: false,
-    }));
-    ring.scale.set(MARKER_WORLD * 1.45, MARKER_WORLD * 1.45, 1);
-    ring.renderOrder = -1;
-    group.add(ring);
-  }
 
   group.userData.event = ev;
   return group;
@@ -515,17 +499,11 @@ function createZoneMarker(zone) {
   const base = MARKER_WORLD * 1.15;
 
   const diamond = new THREE.Mesh(
-    new THREE.CircleGeometry(base * 0.55, 4),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false })
+    new THREE.CircleGeometry(base * 0.6, 4),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false })
   );
   diamond.rotation.z = Math.PI / 4;
   group.add(diamond);
-
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(base * 0.72, base * 0.85, 20),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false })
-  );
-  group.add(ring);
 
   group.userData.zone = zone;
   return group;
@@ -914,10 +892,6 @@ export class Globe {
       const ev = g.userData.event;
       if (!ev) continue;
       const sel = ev.id === id;
-      g.children.forEach((c, i) => {
-        if (!c.material) return;
-        c.material.opacity = sel ? 1 : (i === 0 ? 1 : 0.45);
-      });
       if (sel) {
         const pos = latLonToVec3(ev.lat, ev.lon, 1.008);
         this._selRing = new THREE.Mesh(
