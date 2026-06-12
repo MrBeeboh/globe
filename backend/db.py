@@ -1,240 +1,206 @@
-"""
-Database layer for World Event Globe.
-SQLite with FTS5 for full-text search on events.
-"""
+"""SQLite storage layer with FTS5 full-text search."""
+import os
 import sqlite3
-import json
-from pathlib import Path
-from contextlib import contextmanager
-from datetime import datetime
-from typing import Optional, List, Dict, Any
+import threading
 
-DB_PATH = Path(__file__).parent.parent / "data" / "globe.db"
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "globe.db")
+
+_local = threading.local()
 
 SCHEMA = """
-PRAGMA journal_mode=WAL;
-PRAGMA synchronous=NORMAL;
-PRAGMA cache_size=-32768;
-PRAGMA temp_store=memory;
-PRAGMA mmap_size=268435456;
-
--- Sources: RSS feeds, APIs, GDELT
-CREATE TABLE IF NOT EXISTS sources (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    type TEXT NOT NULL,           -- 'rss', 'gdelt', 'api', 'manual'
-    url TEXT,
-    config_json TEXT,             -- JSON config (feed URL, API key ref, etc.)
-    enabled INTEGER DEFAULT 1,
-    last_fetched DATETIME,
-    last_success DATETIME,
-    error_count INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Raw ingested items before enrichment
-CREATE TABLE IF NOT EXISTS raw_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_id INTEGER NOT NULL REFERENCES sources(id),
-    external_id TEXT,             -- GDELT event ID, RSS guid, etc.
-    title TEXT,
-    url TEXT,
-    published_at DATETIME,
-    raw_json TEXT NOT NULL,       -- Full raw payload
-    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(source_id, external_id)
-);
-
--- Enriched events (the main query target)
 CREATE TABLE IF NOT EXISTS events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    raw_item_id INTEGER REFERENCES raw_items(id),
-    title TEXT NOT NULL,
-    summary TEXT,
-    url TEXT,
-    category TEXT NOT NULL,       -- 'conflict', 'diplomatic', 'humanitarian', 'political', 'disaster', 'economic'
-    severity INTEGER NOT NULL,    -- 0-100
-    confidence REAL DEFAULT 0.5,  -- 0.0-1.0 enrichment confidence
-    lat REAL,                     -- Event latitude
-    lng REAL,                     -- Event longitude
-    location_name TEXT,           -- Human-readable location
-    country_code TEXT,            -- ISO3
-    region TEXT,                  -- 'Middle East', 'Europe', etc.
-    actors_json TEXT,             -- JSON array: [{"name": "IDF", "type": "state"}, ...]
-    casualties_json TEXT,         -- JSON: {"killed": 12, "wounded": 45, "civilian": 8}
-    tags_json TEXT,               -- JSON array: ["airstrike", "ceasefire", "gaza"]
-    published_at DATETIME NOT NULL,
-    ingested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    id        TEXT PRIMARY KEY,
+    ts        TEXT NOT NULL,            -- ISO8601 UTC
+    title     TEXT NOT NULL,
+    summary   TEXT DEFAULT '',
+    url       TEXT DEFAULT '',
+    source    TEXT DEFAULT '',          -- domain or feed name
+    channel   TEXT DEFAULT '',          -- gdelt | rss | usgs | gdacs | sample
+    category  TEXT DEFAULT 'other',     -- conflict | unrest | military | diplomacy | disaster | hazard | other
+    severity  REAL DEFAULT 0.3,         -- 0..1
+    lat       REAL NOT NULL,
+    lon       REAL NOT NULL,
+    place     TEXT DEFAULT '',
+    country   TEXT DEFAULT '',
+    actors    TEXT DEFAULT '',
+    ingested  TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_events_cat ON events(category);
+CREATE INDEX IF NOT EXISTS idx_events_url ON events(url);
 
--- Entity extraction: people, orgs, locations, weapons, treaties
-CREATE TABLE IF NOT EXISTS entities (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    entity_type TEXT NOT NULL,    -- 'person', 'org', 'location', 'weapon', 'treaty', 'facility'
-    name TEXT NOT NULL,
-    aliases_json TEXT,            -- JSON array of known aliases
-    metadata_json TEXT,           -- JSON: role, affiliation, etc.
-    mention_count INTEGER DEFAULT 1
-);
-
--- Country profiles (deep-dive)
-CREATE TABLE IF NOT EXISTS countries (
-    iso3 TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    capital TEXT,
-    lat REAL,
-    lng REAL,
-    population INTEGER,
-    area_km2 INTEGER,
-    gdp_usd BIGINT,
-    gdp_per_capita INTEGER,
-    regime_type TEXT,             -- 'democracy', 'autocracy', 'hybrid', 'failed'
-    regime_score REAL,            -- V-Dem polyarchy index 0-1
-    military_spending_usd BIGINT,
-    military_personnel INTEGER,
-    nuclear INTEGER DEFAULT 0,
-    trade_partners_json TEXT,     -- JSON: [{"country": "USA", "pct": 15.2}, ...]
-    risk_indices_json TEXT,       -- JSON: {"fragile_states": 85, "conflict_risk": 70}
-    leadership_json TEXT,         -- JSON: {"head_of_state": "...", "since": "..."}
-    recent_coups INTEGER DEFAULT 0,
-    recent_protests INTEGER DEFAULT 0,
-    conflict_history_json TEXT,   -- JSON summary of major conflicts
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- City profiles
-CREATE TABLE IF NOT EXISTS cities (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    country_code TEXT REFERENCES countries(iso3),
-    lat REAL NOT NULL,
-    lng REAL NOT NULL,
-    population INTEGER,
-    metro_population INTEGER,
-    strategic_value TEXT,         -- 'capital', 'port', 'industrial', 'military', 'tech', 'financial'
-    infrastructure_json TEXT,     -- JSON: airports, ports, bases, fiber
-    recent_events_count INTEGER DEFAULT 0,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(name, country_code)
-);
-
--- Event-country relations (many-to-many for multi-country events)
-CREATE TABLE IF NOT EXISTS event_countries (
-    event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
-    country_code TEXT REFERENCES countries(iso3),
-    role TEXT,                    -- 'primary', 'actor', 'target', 'mediator'
-    PRIMARY KEY (event_id, country_code, role)
-);
-
--- FTS5 virtual table for full-text search
 CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
-    title, summary, location_name, actors_json, tags_json,
-    content='events', content_rowid='id'
+    title, summary, place, actors, country,
+    content='events', content_rowid='rowid'
 );
 
--- Triggers to keep FTS in sync
 CREATE TRIGGER IF NOT EXISTS events_ai AFTER INSERT ON events BEGIN
-    INSERT INTO events_fts(rowid, title, summary, location_name, actors_json, tags_json)
-    VALUES (new.id, new.title, new.summary, new.location_name, new.actors_json, new.tags_json);
+    INSERT INTO events_fts(rowid, title, summary, place, actors, country)
+    VALUES (new.rowid, new.title, new.summary, new.place, new.actors, new.country);
 END;
-
 CREATE TRIGGER IF NOT EXISTS events_ad AFTER DELETE ON events BEGIN
-    INSERT INTO events_fts(events_fts, rowid, title, summary, location_name, actors_json, tags_json)
-    VALUES ('delete', old.id, old.title, old.summary, old.location_name, old.actors_json, old.tags_json);
+    INSERT INTO events_fts(events_fts, rowid, title, summary, place, actors, country)
+    VALUES ('delete', old.rowid, old.title, old.summary, old.place, old.actors, old.country);
 END;
 
-CREATE TRIGGER IF NOT EXISTS events_au AFTER UPDATE ON events BEGIN
-    INSERT INTO events_fts(events_fts, rowid, title, summary, location_name, actors_json, tags_json)
-    VALUES ('delete', old.id, old.title, old.summary, old.location_name, old.actors_json, old.tags_json);
-    INSERT INTO events_fts(rowid, title, summary, location_name, actors_json, tags_json)
-    VALUES (new.id, new.title, new.summary, new.location_name, new.actors_json, new.tags_json);
-END;
-
--- Indexes
-CREATE INDEX IF NOT EXISTS idx_events_published ON events(published_at DESC);
-CREATE INDEX IF NOT EXISTS idx_events_category ON events(category);
-CREATE INDEX IF NOT EXISTS idx_events_severity ON events(severity DESC);
-CREATE INDEX IF NOT EXISTS idx_events_country ON events(country_code);
-CREATE INDEX IF NOT EXISTS idx_events_region ON events(region);
-CREATE INDEX IF NOT EXISTS idx_events_lat_lng ON events(lat, lng);
-CREATE INDEX IF NOT EXISTS idx_raw_items_source ON raw_items(source_id, fetched_at DESC);
-CREATE INDEX IF NOT EXISTS idx_entities_event ON entities(event_id);
-CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type);
-CREATE INDEX IF NOT EXISTS idx_cities_country ON cities(country_code);
+CREATE TABLE IF NOT EXISTS ingest_log (
+    channel TEXT PRIMARY KEY,
+    last_run TEXT,
+    last_count INTEGER DEFAULT 0,
+    last_error TEXT DEFAULT ''
+);
 """
 
-def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+
+def _open() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.executescript(SCHEMA)
     return conn
 
-def init_db():
-    """Initialize database schema."""
-    with get_conn() as conn:
-        conn.executescript(SCHEMA)
-        conn.commit()
 
-@contextmanager
-def transaction():
-    conn = get_conn()
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+def get_conn() -> sqlite3.Connection:
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
+        try:
+            conn = _open()
+        except sqlite3.Error:
+            # stale or corrupt database (e.g. left over from an older
+            # version): it is only a cache, so rebuild it from scratch
+            for suffix in ("", "-wal", "-shm"):
+                try:
+                    os.remove(DB_PATH + suffix)
+                except FileNotFoundError:
+                    pass
+            conn = _open()
+        _local.conn = conn
+    return conn
 
-# --- Helpers ---
 
-def execute(sql: str, params: tuple = ()) -> sqlite3.Cursor:
-    with get_conn() as conn:
-        cur = conn.execute(sql, params)
-        conn.commit()
-        return cur
-
-def query(sql: str, params: tuple = ()) -> List[sqlite3.Row]:
-    with get_conn() as conn:
-        return conn.execute(sql, params).fetchall()
-
-def query_one(sql: str, params: tuple = ()) -> Optional[sqlite3.Row]:
-    with get_conn() as conn:
-        return conn.execute(sql, params).fetchone()
-
-def insert(table: str, data: Dict[str, Any]) -> int:
-    """Insert row, return rowid."""
-    cols = ", ".join(data.keys())
-    placeholders = ", ".join(["?" for _ in data])
-    sql = f"INSERT INTO {table} ({cols}) VALUES ({placeholders})"
-    with get_conn() as conn:
-        cur = conn.execute(sql, tuple(data.values()))
-        conn.commit()
-        return cur.lastrowid
-
-def upsert(table: str, data: Dict[str, Any], conflict_cols: List[str]) -> int:
-    """Upsert row (INSERT OR REPLACE)."""
-    cols = ", ".join(data.keys())
-    placeholders = ", ".join(["?" for _ in data])
-    conflict = ", ".join(conflict_cols)
-    updates = ", ".join([f"{c}=excluded.{c}" for c in data.keys() if c not in conflict_cols])
-    sql = f"INSERT INTO {table} ({cols}) VALUES ({placeholders}) ON CONFLICT({conflict}) DO UPDATE SET {updates}"
-    with get_conn() as conn:
-        cur = conn.execute(sql, tuple(data.values()))
-        conn.commit()
-        return cur.lastrowid
-
-def bulk_insert(table: str, rows: List[Dict[str, Any]]) -> int:
+def insert_events(rows: list[dict]) -> int:
+    """Insert events, skipping ids and urls already present. Returns inserted count."""
     if not rows:
         return 0
-    cols = ", ".join(rows[0].keys())
-    placeholders = ", ".join(["?" for _ in rows[0]])
-    sql = f"INSERT OR IGNORE INTO {table} ({cols}) VALUES ({placeholders})"
-    with get_conn() as conn:
-        conn.executemany(sql, [tuple(r.values()) for r in rows])
-        conn.commit()
-        return conn.total_changes
+    conn = get_conn()
+    inserted = 0
+    with conn:
+        for r in rows:
+            if r.get("url"):
+                dup = conn.execute(
+                    "SELECT 1 FROM events WHERE url = ? AND id != ? LIMIT 1",
+                    (r["url"], r["id"]),
+                ).fetchone()
+                if dup:
+                    continue
+            cur = conn.execute(
+                """INSERT OR IGNORE INTO events
+                   (id, ts, title, summary, url, source, channel, category,
+                    severity, lat, lon, place, country, actors)
+                   VALUES (:id,:ts,:title,:summary,:url,:source,:channel,:category,
+                           :severity,:lat,:lon,:place,:country,:actors)""",
+                r,
+            )
+            inserted += cur.rowcount
+    return inserted
+
+
+def log_ingest(channel: str, count: int, error: str = ""):
+    conn = get_conn()
+    with conn:
+        conn.execute(
+            """INSERT INTO ingest_log(channel, last_run, last_count, last_error)
+               VALUES (?, strftime('%Y-%m-%dT%H:%M:%SZ','now'), ?, ?)
+               ON CONFLICT(channel) DO UPDATE SET
+                 last_run=excluded.last_run, last_count=excluded.last_count,
+                 last_error=excluded.last_error""",
+            (channel, count, error),
+        )
+
+
+def query_events(since_hours: int = 72, category: str = "", min_severity: float = 0.0,
+                 q: str = "", limit: int = 1000) -> list[dict]:
+    conn = get_conn()
+    params: list = []
+    if q:
+        sql = """SELECT e.* FROM events e
+                 JOIN events_fts f ON f.rowid = e.rowid
+                 WHERE events_fts MATCH ?"""
+        # FTS5 prefix query; quote to survive punctuation in user input
+        params.append('"' + q.replace('"', "") + '"*')
+    else:
+        sql = "SELECT e.* FROM events e WHERE 1=1"
+    sql += " AND e.ts >= strftime('%Y-%m-%dT%H:%M:%SZ','now', ?)"
+    params.append(f"-{int(since_hours)} hours")
+    if category:
+        cats = [c.strip() for c in category.split(",") if c.strip()]
+        sql += " AND e.category IN (%s)" % ",".join("?" * len(cats))
+        params.extend(cats)
+    if min_severity > 0:
+        sql += " AND e.severity >= ?"
+        params.append(min_severity)
+    sql += " ORDER BY e.ts DESC LIMIT ?"
+    params.append(min(int(limit), 5000))
+    return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def get_event(event_id: str) -> dict | None:
+    row = get_conn().execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def related_events(event_id: str, limit: int = 8) -> list[dict]:
+    """Events near the same place: country, category, or within ~4°."""
+    ev = get_event(event_id)
+    if not ev:
+        return []
+    conn = get_conn()
+    lim = min(int(limit), 20)
+    rows = conn.execute(
+        """SELECT * FROM events
+           WHERE id != ?
+             AND ts >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-72 hours')
+             AND (
+               (country != '' AND country = ?)
+               OR category = ?
+               OR (ABS(lat - ?) < 4 AND ABS(lon - ?) < 4)
+             )
+           ORDER BY
+             CASE WHEN country != '' AND country = ? THEN 0 ELSE 1 END,
+             ABS(lat - ?) + ABS(lon - ?),
+             severity DESC,
+             ts DESC
+           LIMIT ?""",
+        (event_id, ev.get("country", ""), ev["category"],
+         ev["lat"], ev["lon"], ev.get("country", ""),
+         ev["lat"], ev["lon"], lim),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def stats() -> dict:
+    conn = get_conn()
+    total = conn.execute("SELECT COUNT(*) c FROM events").fetchone()["c"]
+    last24 = conn.execute(
+        "SELECT COUNT(*) c FROM events WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-24 hours')"
+    ).fetchone()["c"]
+    by_cat = {
+        r["category"]: r["c"]
+        for r in conn.execute(
+            """SELECT category, COUNT(*) c FROM events
+               WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-72 hours')
+               GROUP BY category"""
+        )
+    }
+    ingest = [dict(r) for r in conn.execute("SELECT * FROM ingest_log")]
+    return {"total": total, "last24h": last24, "by_category_72h": by_cat, "ingest": ingest}
+
+
+def prune(days: int = 14):
+    conn = get_conn()
+    with conn:
+        conn.execute(
+            "DELETE FROM events WHERE ts < strftime('%Y-%m-%dT%H:%M:%SZ','now', ?)",
+            (f"-{int(days)} days",),
+        )

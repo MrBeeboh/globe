@@ -1,0 +1,12 @@
+{
+  "streams": [
+    {"id": "bbc-news", "name": "BBC News", "region": "Global", "embed": "https://www.youtube.com/embed/live_stream?channel=UC16niPjnDbnSSfXJBTWYNxw", "lat": 51.5, "lon": -0.12},
+    {"id": "aljazeera", "name": "Al Jazeera English", "region": "Middle East", "embed": "https://www.youtube.com/embed/live_stream?channel=UCNye-wNBqNL5ZzHSjeJTK9g", "lat": 25.29, "lon": 51.53},
+    {"id": "france24", "name": "France 24 English", "region": "Europe", "embed": "https://www.youtube.com/embed/live_stream?channel=UCQfwfsi5VrQ8yKZ-UWmAEFg", "lat": 48.86, "lon": 2.35},
+    {"id": "dw-news", "name": "DW News", "region": "Europe", "embed": "https://www.youtube.com/embed/live_stream?channel=UCknLrEdh-Peaa5E4zESqedw", "lat": 52.52, "lon": 13.41},
+    {"id": "sky-news", "name": "Sky News", "region": "UK", "embed": "https://www.youtube.com/embed/live_stream?channel=UCoMdktPbSTpAyPdOw7QACTg", "lat": 51.51, "lon": -0.12},
+    {"id": "wion", "name": "WION", "region": "Asia", "embed": "https://www.youtube.com/embed/live_stream?channel=UCgJTY0F5nY8sV3rF7MfTgEA", "lat": 28.61, "lon": 77.21},
+    {"id": "cgtn", "name": "CGTN", "region": "China", "embed": "https://www.youtube.com/embed/live_stream?channel=UCgr5bzpjyAKy9r6RWNmYzLw", "lat": 39.9, "lon": 116.4},
+    {"id": "nato", "name": "NATO Live", "region": "NATO", "embed": "https://www.youtube.com/embed/live_stream?channel=UC4Ya9tQgzM9O3HMx4L_bSgQ", "lat": 50.88, "lon": 4.43}
+  ]
+}

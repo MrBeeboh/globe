@@ -1,0 +1,17 @@
+{
+  "zones": [
+    { "id": "ukraine", "label": "Ukraine War", "severity": "war", "lat": 48.5, "lon": 31.2, "description": "Ongoing invasion and active frontlines across eastern and southern Ukraine.", "url": "https://liveuamap.com/" },
+    { "id": "gaza", "label": "Gaza Conflict", "severity": "war", "lat": 31.35, "lon": 34.35, "description": "Active military operations and severe humanitarian crisis in Gaza.", "url": "https://israelpalestine.liveuamap.com/" },
+    { "id": "lebanon", "label": "Lebanon Border", "severity": "high", "lat": 33.377, "lon": 35.483, "description": "Cross-border strikes and artillery along the Blue Line.", "url": "https://lebanon.liveuamap.com/" },
+    { "id": "sudan", "label": "Sudan Civil War", "severity": "war", "lat": 15.0, "lon": 30.0, "description": "Armed conflict between SAF and RSF factions across Sudan.", "url": "https://sudan.liveuamap.com/" },
+    { "id": "myanmar", "label": "Myanmar Conflict", "severity": "war", "lat": 19.5, "lon": 96.5, "description": "Internal conflict and military junta opposition operations.", "url": "https://myanmar.liveuamap.com/" },
+    { "id": "drc", "label": "DRC Eastern Conflict", "severity": "war", "lat": -1.0, "lon": 28.5, "description": "M23 rebel offensive and regional instability in eastern DRC." },
+    { "id": "yemen", "label": "Yemen War", "severity": "war", "lat": 15.5, "lon": 48.0, "description": "Houthi operations and Red Sea maritime threats.", "url": "https://yemen.liveuamap.com/" },
+    { "id": "syria", "label": "Syria", "severity": "high", "lat": 35.0, "lon": 38.5, "description": "Ongoing civil conflict and localized insurgencies.", "url": "https://syria.liveuamap.com/" },
+    { "id": "taiwan", "label": "Taiwan Strait", "severity": "elevated", "lat": 24.0, "lon": 119.5, "description": "Elevated military drills and regional tension." },
+    { "id": "korea", "label": "Korean DMZ", "severity": "elevated", "lat": 38.3, "lon": 127.0, "description": "Ongoing cross-border tension and military posturing." },
+    { "id": "sahel", "label": "Sahel Instability", "severity": "high", "lat": 14.0, "lon": 5.0, "description": "Insurgencies and military coups across the Sahel region." },
+    { "id": "somalia", "label": "Somalia", "severity": "high", "lat": 5.0, "lon": 46.0, "description": "Al-Shabaab insurgency and counter-terrorism operations." },
+    { "id": "redsea", "label": "Red Sea Threat", "severity": "high", "lat": 16.0, "lon": 40.0, "description": "Anti-ship missile and drone attacks on maritime traffic.", "url": "https://yemen.liveuamap.com/" }
+  ]
+}
