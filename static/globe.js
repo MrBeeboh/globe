@@ -104,10 +104,52 @@ function shortCountryName(name) {
 export function sevColor(s) {
   if (s >= 0.7) return '#c44038';
   if (s >= 0.45) return '#d4882a';
-  return '#b58a3a';
+  return '#9a9080';
 }
 
+export const CAT_COLORS = {
+  conflict: '#e04040',
+  unrest: '#e88830',
+  military: '#4a88c8',
+  diplomacy: '#38a868',
+  disaster: '#d4a820',
+  hazard: '#a058c8',
+  other: '#9090a0',
+};
+
 const ZONE_COLORS = { war: '#c44038', high: '#d4882a', elevated: '#b58a3a' };
+
+export function catColor(category) {
+  return CAT_COLORS[category] || CAT_COLORS.other;
+}
+
+const CAT_SHAPES = {
+  conflict: { sides: 3, rot: 0, label: '▲' },
+  unrest: { sides: 4, rot: Math.PI / 4, label: '◆' },
+  military: { sides: 4, rot: 0, label: '■' },
+  diplomacy: { sides: 24, rot: 0, label: '●' },
+  disaster: { sides: 5, rot: 0, label: '⬟' },
+  hazard: { sides: 8, rot: 0, label: '✦' },
+  other: { sides: 12, rot: 0, label: '·' },
+};
+
+let _heatBlobTex = null;
+function heatBlobTexture() {
+  if (_heatBlobTex) return _heatBlobTex;
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  g.addColorStop(0.25, 'rgba(255, 255, 255, 0.55)');
+  g.addColorStop(0.55, 'rgba(255, 255, 255, 0.15)');
+  g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  _heatBlobTex = new THREE.CanvasTexture(c);
+  _heatBlobTex.colorSpace = THREE.SRGBColorSpace;
+  return _heatBlobTex;
+}
 
 export function latLonToVec3(lat, lon, r) {
   const phi = (90 - lat) * Math.PI / 180;
@@ -361,37 +403,41 @@ function glowTexture(hex) {
 
 function createMarker(ev) {
   const group = new THREE.Group();
-  const hex = sevColor(ev.severity);
+  const cat = ev.category || 'other';
+  const hex = catColor(cat);
   const color = new THREE.Color(hex);
   const isHigh = ev.severity >= 0.7;
-  const isMed = ev.severity >= 0.45;
-  const base = 0.006 + ev.severity * 0.014;
+  const shape = CAT_SHAPES[cat] || CAT_SHAPES.other;
+  const base = 0.003 + ev.severity * 0.004;
 
-  const glowMat = new THREE.SpriteMaterial({
-    map: glowTexture(hex), transparent: true, opacity: 0.85,
-    depthWrite: false, blending: THREE.AdditiveBlending,
+  const coreMat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.95, depthWrite: false,
   });
-  const glow = new THREE.Sprite(glowMat);
-  glow.scale.set(base * 4, base * 4, 1);
-  group.add(glow);
-
-  const coreMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false });
-  const core = new THREE.Mesh(new THREE.CircleGeometry(base * 0.6, 16), coreMat);
+  const core = new THREE.Mesh(new THREE.CircleGeometry(base, shape.sides), coreMat);
+  core.rotation.z = shape.rot;
   group.add(core);
 
-  const ringMat = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: isHigh ? 0.8 : 0.5,
+  const rimMat = new THREE.MeshBasicMaterial({
+    color: 0xf5f0e6, transparent: true, opacity: isHigh ? 0.55 : 0.3,
     side: THREE.DoubleSide, depthWrite: false,
   });
-  const ring = new THREE.Mesh(new THREE.RingGeometry(base * 0.9, base * 1.15, 24), ringMat);
-  group.add(ring);
+  const rim = new THREE.Mesh(
+    new THREE.RingGeometry(base * 1.05, base * 1.18, shape.sides),
+    rimMat
+  );
+  rim.rotation.z = shape.rot;
+  group.add(rim);
 
-  if (isHigh || isMed) {
+  if (isHigh) {
     const outerMat = new THREE.MeshBasicMaterial({
       color, transparent: true, opacity: 0,
       side: THREE.DoubleSide, depthWrite: false,
     });
-    const outer = new THREE.Mesh(new THREE.RingGeometry(base * 1.2, base * 1.35, 24), outerMat);
+    const outer = new THREE.Mesh(
+      new THREE.RingGeometry(base * 1.25, base * 1.32, shape.sides),
+      outerMat
+    );
+    outer.rotation.z = shape.rot;
     group.add(outer);
     group.userData.outer = outer;
   }
@@ -399,7 +445,7 @@ function createMarker(ev) {
   group.userData.event = ev;
   group.userData.base = base;
   group.userData.phase = Math.random() * Math.PI * 2;
-  group.userData.speed = isHigh ? 2.5 : isMed ? 1.8 : 1.2;
+  group.userData.speed = isHigh ? 1.8 : 1.2;
   return group;
 }
 
@@ -671,26 +717,25 @@ export class Globe {
 
   setHeatmap(points) {
     for (const child of [...this.heatmap.children]) {
-      child.geometry.dispose();
-      child.material.dispose();
+      if (child.material?.map) child.material.map.dispose();
+      child.material?.dispose();
       this.heatmap.remove(child);
     }
+    const tex = heatBlobTexture();
     for (const p of points) {
       const t = Math.min(1, p.intensity);
-      const radius = 0.012 + t * 0.05;
-      const col = new THREE.Color(sevColor(0.35 + t * 0.55));
-      const mesh = new THREE.Mesh(
-        new THREE.CircleGeometry(radius, 20),
-        new THREE.MeshBasicMaterial({
-          color: col, transparent: true, opacity: 0.12 + t * 0.28,
-          depthWrite: false, blending: THREE.AdditiveBlending,
-        })
-      );
-      const pos = latLonToVec3(p.lat, p.lon, 1.004);
-      mesh.position.copy(pos);
-      mesh.lookAt(pos.clone().multiplyScalar(2));
-      mesh.renderOrder = 0;
-      this.heatmap.add(mesh);
+      const col = new THREE.Color('#3a1868').lerp(new THREE.Color('#c82848'), t);
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex, color: col, transparent: true,
+        opacity: 0.18 + t * 0.28,
+        depthWrite: false, depthTest: true,
+      }));
+      const size = 0.06 + t * 0.14 + Math.min(p.count || 1, 12) * 0.008;
+      sprite.scale.set(size, size, 1);
+      const pos = latLonToVec3(p.lat, p.lon, 1.001);
+      sprite.position.copy(pos);
+      sprite.renderOrder = -1;
+      this.heatmap.add(sprite);
     }
   }
 
@@ -802,7 +847,7 @@ export class Globe {
 
     for (const ev of events) {
       const group = createMarker(ev);
-      const pos = latLonToVec3(ev.lat, ev.lon, 1.005);
+      const pos = latLonToVec3(ev.lat, ev.lon, 1.006);
       group.position.copy(pos);
       group.lookAt(pos.clone().multiplyScalar(2));
       group.renderOrder = 2;
@@ -823,13 +868,16 @@ export class Globe {
       const ev = g.userData.event;
       if (!ev) continue;
       const sel = ev.id === id;
-      g.children.forEach((c) => {
-        if (c.material) c.material.opacity = sel ? 1 : (c === g.children[0] ? 0.85 : c.material.opacity);
+      g.children.forEach((c, i) => {
+        if (!c.material) return;
+        if (sel) c.material.opacity = 1;
+        else if (i === 0) c.material.opacity = 0.95;
+        else if (i === 1) c.material.opacity = ev.severity >= 0.7 ? 0.55 : 0.3;
       });
       if (sel) {
         const pos = latLonToVec3(ev.lat, ev.lon, 1.008);
         this._selRing = new THREE.Mesh(
-          new THREE.RingGeometry(0.022, 0.028, 32),
+          new THREE.RingGeometry(0.012, 0.016, 24),
           new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false })
         );
         this._selRing.position.copy(pos);
@@ -878,7 +926,7 @@ export class Globe {
     }
     this.camUniform && this.camUniform.value.copy(this.camera.position);
 
-    const zoomScale = Math.min(Math.max((this.camera.position.length() - 1) / 1.8, 0.15), 1);
+    const zoomScale = Math.min(Math.max((this.camera.position.length() - 1) / 2.4, 0.28), 0.72);
     const t = this._clock.getElapsedTime();
 
     for (const g of this.zones.children) {
@@ -898,11 +946,11 @@ export class Globe {
       const phase = t * g.userData.speed + g.userData.phase;
       if (g.userData.outer) {
         const pulse = (Math.sin(phase) + 1) * 0.5;
-        g.userData.outer.material.opacity = pulse * 0.4;
-        g.userData.outer.scale.setScalar(1 + pulse * 0.6);
+        g.userData.outer.material.opacity = pulse * 0.22;
+        g.userData.outer.scale.setScalar(1 + pulse * 0.25);
       }
-      const ring = g.children[2];
-      if (ring?.material) ring.material.opacity = 0.4 + Math.sin(phase * 1.5) * 0.2;
+      const rim = g.children[1];
+      if (rim?.material) rim.material.opacity = 0.25 + Math.sin(phase * 1.2) * 0.1;
     }
 
     if (this.labelsVisible) {

@@ -1,5 +1,5 @@
 /* App shell: data layer, feed, filters, detail panel, ingest status. */
-import { Globe, sevColor } from '/static/globe.js';
+import { Globe, sevColor, catColor } from '/static/globe.js';
 
 const CATEGORIES = ['conflict', 'unrest', 'military', 'diplomacy', 'disaster', 'hazard', 'other'];
 const CAT_LABELS = {
@@ -13,7 +13,7 @@ const REFRESH_SEC = 60;
 const LAYERS = [
   { key: 'events', label: 'Events', color: '#c44038' },
   { key: 'zones', label: 'Conflict Zones', color: '#d4882a' },
-  { key: 'heatmap', label: 'Event Heatmap', color: '#b58a3a' },
+  { key: 'heatmap', label: 'Density Heatmap', color: '#a058c8' },
   { key: 'labels', label: 'Country Labels', color: '#c9a227' },
   { key: 'dayNight', label: 'Day / Night Line', color: '#7a9472' },
   { key: 'liveSun', label: 'Live Sun Position', color: '#9a948c' },
@@ -177,20 +177,23 @@ async function loadSamples() {
 }
 
 function buildHeatmap(evs) {
+  const step = 6;
   const cells = new Map();
   for (const ev of evs) {
-    const lat = Math.round(ev.lat * 2) / 2;
-    const lon = Math.round(ev.lon * 2) / 2;
+    const lat = Math.round(ev.lat / step) * step;
+    const lon = Math.round(ev.lon / step) * step;
     const key = `${lat},${lon}`;
     const cur = cells.get(key) || { lat, lon, count: 0, sev: 0 };
     cur.count += 1;
     cur.sev += ev.severity;
     cells.set(key, cur);
   }
-  const max = Math.max(1, ...[...cells.values()].map((c) => c.count));
-  return [...cells.values()].map((c) => ({
-    lat: c.lat, lon: c.lon,
-    intensity: (c.count / max) * 0.65 + (c.sev / c.count) * 0.35,
+  const dense = [...cells.values()].filter((c) => c.count >= 3);
+  if (!dense.length) return [];
+  const max = Math.max(...dense.map((c) => c.count));
+  return dense.map((c) => ({
+    lat: c.lat, lon: c.lon, count: c.count,
+    intensity: (c.count / max) * 0.7 + (c.sev / c.count) * 0.3,
   }));
 }
 
@@ -254,7 +257,7 @@ function renderTicker(evs) {
   }
   const html = items.map((ev) =>
     `<span class="ticker-item">` +
-      `<span class="t-sev" style="background:${sevColor(ev.severity)}"></span>` +
+      `<span class="t-sev cat-shape cat-${ev.category}" style="background:${catColor(ev.category)}"></span>` +
       `<span class="t-cat">${esc(CAT_LABELS[ev.category])}</span>` +
       `<span class="t-title">${esc(ev.title)}</span>` +
       `<span class="t-cat">${timeAgo(ev.ts)}</span>` +
@@ -324,7 +327,7 @@ function renderFeed(evs) {
     el.dataset.id = ev.id;
     el.innerHTML =
       `<div class="row-top">` +
-        `<span class="sev-dot" style="background:${sevColor(ev.severity)}"></span>` +
+        `<span class="sev-dot cat-shape cat-${ev.category}" style="background:${catColor(ev.category)}"></span>` +
         `<span class="cat-badge cat-${ev.category}">${esc(CAT_LABELS[ev.category])}</span>` +
         `<span class="meta-src">${esc(ev.source)}</span>` +
         `<span class="meta-time">${timeAgo(ev.ts)}</span>` +
