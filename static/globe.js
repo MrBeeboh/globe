@@ -123,15 +123,99 @@ export function catColor(category) {
   return CAT_COLORS[category] || CAT_COLORS.other;
 }
 
-const CAT_SHAPES = {
-  conflict: { sides: 3, rot: 0, label: '▲' },
-  unrest: { sides: 4, rot: Math.PI / 4, label: '◆' },
-  military: { sides: 4, rot: 0, label: '■' },
-  diplomacy: { sides: 24, rot: 0, label: '●' },
-  disaster: { sides: 5, rot: 0, label: '⬟' },
-  hazard: { sides: 8, rot: 0, label: '✦' },
-  other: { sides: 12, rot: 0, label: '·' },
-};
+const MARKER_PX = 28;
+const MARKER_WORLD = 0.013;
+const _symTexCache = new Map();
+
+function drawCatSymbol(ctx, cat, cx, cy, r) {
+  ctx.beginPath();
+  switch (cat) {
+    case 'conflict':
+      ctx.moveTo(cx, cy - r);
+      ctx.lineTo(cx - r * 0.87, cy + r * 0.5);
+      ctx.lineTo(cx + r * 0.87, cy + r * 0.5);
+      break;
+    case 'unrest':
+      ctx.moveTo(cx, cy - r);
+      ctx.lineTo(cx + r, cy);
+      ctx.lineTo(cx, cy + r);
+      ctx.lineTo(cx - r, cy);
+      break;
+    case 'military': {
+      const s = r * 0.78;
+      ctx.rect(cx - s, cy - s, s * 2, s * 2);
+      break;
+    }
+    case 'diplomacy':
+      ctx.arc(cx, cy, r * 0.78, 0, Math.PI * 2);
+      break;
+    case 'disaster':
+      for (let i = 0; i < 5; i++) {
+        const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+        const x = cx + r * Math.cos(a);
+        const y = cy + r * Math.sin(a);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      break;
+    case 'hazard':
+      for (let i = 0; i < 8; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 4;
+        const rr = i % 2 === 0 ? r : r * 0.38;
+        const x = cx + rr * Math.cos(a);
+        const y = cy + rr * Math.sin(a);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      break;
+    default:
+      ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+  }
+  ctx.closePath();
+}
+
+function symbolTexture(category) {
+  const cat = CAT_SHAPES_KEY(category);
+  if (_symTexCache.has(cat)) return _symTexCache.get(cat);
+  const hex = catColor(cat);
+  const canvas = document.createElement('canvas');
+  const pad = 4;
+  canvas.width = MARKER_PX + pad * 2;
+  canvas.height = MARKER_PX + pad * 2;
+  const ctx = canvas.getContext('2d');
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const r = MARKER_PX * 0.38;
+  drawCatSymbol(ctx, cat, cx, cy, r);
+  ctx.fillStyle = hex;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(245, 240, 230, 0.55)';
+  ctx.lineWidth = 1.25;
+  ctx.stroke();
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  _symTexCache.set(cat, tex);
+  return tex;
+}
+
+function CAT_SHAPES_KEY(category) {
+  return ['conflict', 'unrest', 'military', 'diplomacy', 'disaster', 'hazard'].includes(category)
+    ? category : 'other';
+}
+
+let _ringTex = null;
+function markerRingTexture() {
+  if (_ringTex) return _ringTex;
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.strokeStyle = 'rgba(245, 240, 230, 0.7)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(32, 32, 24, 0, Math.PI * 2);
+  ctx.stroke();
+  _ringTex = new THREE.CanvasTexture(c);
+  _ringTex.minFilter = THREE.LinearFilter;
+  return _ringTex;
+}
 
 let _heatBlobTex = null;
 function heatBlobTexture() {
@@ -404,48 +488,23 @@ function glowTexture(hex) {
 function createMarker(ev) {
   const group = new THREE.Group();
   const cat = ev.category || 'other';
-  const hex = catColor(cat);
-  const color = new THREE.Color(hex);
-  const isHigh = ev.severity >= 0.7;
-  const shape = CAT_SHAPES[cat] || CAT_SHAPES.other;
-  const base = 0.003 + ev.severity * 0.004;
 
-  const coreMat = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 0.95, depthWrite: false,
-  });
-  const core = new THREE.Mesh(new THREE.CircleGeometry(base, shape.sides), coreMat);
-  core.rotation.z = shape.rot;
-  group.add(core);
+  const icon = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: symbolTexture(cat), transparent: true, depthWrite: false,
+  }));
+  icon.scale.set(MARKER_WORLD, MARKER_WORLD, 1);
+  group.add(icon);
 
-  const rimMat = new THREE.MeshBasicMaterial({
-    color: 0xf5f0e6, transparent: true, opacity: isHigh ? 0.55 : 0.3,
-    side: THREE.DoubleSide, depthWrite: false,
-  });
-  const rim = new THREE.Mesh(
-    new THREE.RingGeometry(base * 1.05, base * 1.18, shape.sides),
-    rimMat
-  );
-  rim.rotation.z = shape.rot;
-  group.add(rim);
-
-  if (isHigh) {
-    const outerMat = new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0,
-      side: THREE.DoubleSide, depthWrite: false,
-    });
-    const outer = new THREE.Mesh(
-      new THREE.RingGeometry(base * 1.25, base * 1.32, shape.sides),
-      outerMat
-    );
-    outer.rotation.z = shape.rot;
-    group.add(outer);
-    group.userData.outer = outer;
+  if (ev.severity >= 0.7) {
+    const ring = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: markerRingTexture(), transparent: true, opacity: 0.45, depthWrite: false,
+    }));
+    ring.scale.set(MARKER_WORLD * 1.45, MARKER_WORLD * 1.45, 1);
+    ring.renderOrder = -1;
+    group.add(ring);
   }
 
   group.userData.event = ev;
-  group.userData.base = base;
-  group.userData.phase = Math.random() * Math.PI * 2;
-  group.userData.speed = isHigh ? 1.8 : 1.2;
   return group;
 }
 
@@ -453,32 +512,22 @@ function createZoneMarker(zone) {
   const group = new THREE.Group();
   const hex = ZONE_COLORS[zone.severity] || ZONE_COLORS.elevated;
   const color = new THREE.Color(hex);
-  const base = zone.severity === 'war' ? 0.018 : zone.severity === 'high' ? 0.015 : 0.012;
-
-  const glowMat = new THREE.SpriteMaterial({
-    map: glowTexture(hex), transparent: true, opacity: 0.7,
-    depthWrite: false, blending: THREE.AdditiveBlending,
-  });
-  const glow = new THREE.Sprite(glowMat);
-  glow.scale.set(base * 5, base * 5, 1);
-  group.add(glow);
+  const base = MARKER_WORLD * 1.15;
 
   const diamond = new THREE.Mesh(
-    new THREE.CircleGeometry(base * 0.75, 4),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false })
+    new THREE.CircleGeometry(base * 0.55, 4),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false })
   );
   diamond.rotation.z = Math.PI / 4;
   group.add(diamond);
 
   const ring = new THREE.Mesh(
-    new THREE.RingGeometry(base * 1.1, base * 1.35, 20),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false })
+    new THREE.RingGeometry(base * 0.72, base * 0.85, 20),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false })
   );
   group.add(ring);
 
   group.userData.zone = zone;
-  group.userData.base = base;
-  group.userData.phase = Math.random() * Math.PI * 2;
   return group;
 }
 
@@ -829,10 +878,7 @@ export class Globe {
     for (const child of [...this.markers.children]) {
       child.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
-        if (o.material) {
-          if (o.material.map) o.material.map.dispose();
-          o.material.dispose();
-        }
+        if (o.material) o.material.dispose();
       });
       this.markers.remove(child);
     }
@@ -870,9 +916,7 @@ export class Globe {
       const sel = ev.id === id;
       g.children.forEach((c, i) => {
         if (!c.material) return;
-        if (sel) c.material.opacity = 1;
-        else if (i === 0) c.material.opacity = 0.95;
-        else if (i === 1) c.material.opacity = ev.severity >= 0.7 ? 0.55 : 0.3;
+        c.material.opacity = sel ? 1 : (i === 0 ? 1 : 0.45);
       });
       if (sel) {
         const pos = latLonToVec3(ev.lat, ev.lon, 1.008);
@@ -926,31 +970,17 @@ export class Globe {
     }
     this.camUniform && this.camUniform.value.copy(this.camera.position);
 
-    const zoomScale = Math.min(Math.max((this.camera.position.length() - 1) / 2.4, 0.28), 0.72);
-    const t = this._clock.getElapsedTime();
+    const dist = this.camera.position.length();
+    const screenScale = Math.min(Math.max(0.009 * (2.6 / dist), 0.007), 0.016) / MARKER_WORLD;
 
     for (const g of this.zones.children) {
       if (!g.userData.zone) continue;
-      g.scale.setScalar(zoomScale);
-      const phase = t * 1.6 + g.userData.phase;
-      const ring = g.children[2];
-      if (ring?.material) {
-        ring.material.opacity = 0.35 + Math.sin(phase) * 0.25;
-        ring.scale.setScalar(1 + Math.sin(phase) * 0.35);
-      }
+      g.scale.setScalar(screenScale);
     }
 
     for (const g of this.markers.children) {
       if (!g.userData.event) continue;
-      g.scale.setScalar(zoomScale);
-      const phase = t * g.userData.speed + g.userData.phase;
-      if (g.userData.outer) {
-        const pulse = (Math.sin(phase) + 1) * 0.5;
-        g.userData.outer.material.opacity = pulse * 0.22;
-        g.userData.outer.scale.setScalar(1 + pulse * 0.25);
-      }
-      const rim = g.children[1];
-      if (rim?.material) rim.material.opacity = 0.25 + Math.sin(phase * 1.2) * 0.1;
+      g.scale.setScalar(screenScale);
     }
 
     if (this.labelsVisible) {
