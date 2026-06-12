@@ -25,8 +25,9 @@ UI, and a single amber→red severity palette.
 Events are deduplicated by id and source URL, severity-scored 0–1, stored in
 SQLite with FTS5 full-text search, and pruned after 14 days.
 
-**Update cadence:** RSS every 10 min, GDELT/USGS every 15 min, GDACS every 20 min.
-The UI re-fetches the local database every 60 s. Click **↻ Refresh** (or press `r`)
+**Update cadence:** configurable in the feed footer — **UI reload** (30s–5min) and **Feed pulls**
+(Fast / Normal / Slow presets). Defaults: RSS 10 min, GDELT/USGS 15 min, GDACS 20 min;
+UI reload 60 s. Click **↻ Refresh** (or press `r`)
 to pull all feeds immediately when something is breaking fast.
 
 ## Run
@@ -63,6 +64,8 @@ backend/
 - `GET /api/events?since_hours=72&category=conflict,hazard&min_severity=0.45&q=sudan&limit=1500`
 - `GET /api/events/{id}`
 - `GET /api/stats` — counts, per-channel ingest log
+- `GET /api/schedule` — ingest intervals and presets
+- `PATCH /api/schedule` — change feed pull cadence (`{"preset":"fast"}` or per-channel minutes)
 - `POST /api/refresh` — force immediate ingest from all feeds
 - `GET /api/health`
 
@@ -70,3 +73,4 @@ backend/
 
 - `PORT` — listen port (default 8090)
 - `GLOBE_NO_INGEST=1` — serve UI/API without background ingestion (dev)
+- `GLOBE_INGEST_RSS_MIN`, `GLOBE_INGEST_GDELT_MIN`, `GLOBE_INGEST_USGS_MIN`, `GLOBE_INGEST_GDACS_MIN` — default intervals before first UI change (minutes)
