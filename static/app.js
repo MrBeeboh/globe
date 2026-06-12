@@ -1,5 +1,5 @@
 /* App shell: plugin-driven layers, events, intel desk, ingest status. */
-import { Globe, sevColor, catColor } from '/static/globe.js?v=18';
+import { Globe, sevColor, catColor } from '/static/globe.js?v=20';
 import { extractGpsFromImage } from '/static/osint.js';
 
 const CATEGORIES = ['conflict', 'unrest', 'military', 'diplomacy', 'disaster', 'hazard', 'other'];
@@ -47,7 +47,7 @@ const state = {
   layers: {
     events: true, zones: true, heatmap: false,
     flights: false, vessels: false, fires: false, satellites: false, photoEarth: false,
-    labels: true, dayNight: true, liveSun: true, autoRotate: true,
+    labels: true, dayNight: false, liveSun: true, autoRotate: true,
   },
   plugins: null,
   osintPin: null,

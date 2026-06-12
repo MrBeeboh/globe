@@ -1,5 +1,5 @@
 /* Professional globe renderer: procedural basemap, atmosphere, labels, event markers. */
-console.log('[globe] renderer v18 — soft day/night, toggle disables shading');
+console.log('[globe] renderer v20 — antimeridian fill fix (polar ring removed)');
 import * as THREE from 'three';
 import { OrbitControls } from '/static/vendor/OrbitControls.js';
 
@@ -476,11 +476,30 @@ function drawCountryPaths(ctx, countriesGeo, px, { fill, stroke, lineWidth = 1.2
             ctx.lineTo(xStart, yPole);
             ctx.closePath();
           } else {
-            ring.forEach(([lon, lat], i) => {
-              const [x, y] = px(lon, lat);
-              i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            // Rings that cross the antimeridian must be drawn with unwrapped
+            // longitudes and repeated at ±360°. Otherwise the seam jump drags
+            // a chord across the whole map and evenodd fills a horizontal
+            // band around the globe — the polar "bullseye" ring.
+            let lonU = ring[0][0];
+            let minLon = lonU, maxLon = lonU;
+            const pts = ring.map(([lon, lat], i) => {
+              if (i > 0) {
+                let d = lon - ring[i - 1][0];
+                if (d > 180) d -= 360; else if (d < -180) d += 360;
+                lonU += d;
+                if (lonU < minLon) minLon = lonU;
+                if (lonU > maxLon) maxLon = lonU;
+              }
+              return [lonU, lat];
             });
-            ctx.closePath();
+            for (let off = -360; off <= 360; off += 360) {
+              if (maxLon + off < -180 || minLon + off > 180) continue;
+              pts.forEach(([lon, lat], i) => {
+                const [x, y] = px(lon + off, lat);
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+              });
+              ctx.closePath();
+            }
           }
         }
       }
