@@ -8,7 +8,8 @@ const CAT_LABELS = {
 };
 const CHANNEL_LABELS = { gdelt: 'GDELT', usgs: 'USGS', gdacs: 'GDACS', rss: 'RSS', sample: 'Sample' };
 const ZONE_SEV_LABELS = { war: 'Active War', high: 'High Tension', elevated: 'Elevated' };
-const REFRESH_SEC = 60;
+const DEFAULT_POLL_SEC = 60;
+const POLL_STORAGE_KEY = 'globe.uiPollSec';
 
 const LAYERS = [
   { key: 'events', label: 'Events', color: '#c44038' },
@@ -59,6 +60,8 @@ const state = {
   intel: { flights: [], fires: [], satellites: [], cctv: [], youtube: [] },
   feedCollapsed: false,
   intelOpen: false,
+  pollSec: DEFAULT_POLL_SEC,
+  ingestPreset: 'normal',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -413,6 +416,71 @@ function renderIngest(channels) {
   }
 }
 
+function loadPollSec() {
+  try {
+    const v = parseInt(localStorage.getItem(POLL_STORAGE_KEY) || '', 10);
+    if ([30, 60, 120, 300].includes(v)) return v;
+  } catch { /* ignore */ }
+  return DEFAULT_POLL_SEC;
+}
+
+function setPollSec(sec) {
+  state.pollSec = sec;
+  try { localStorage.setItem(POLL_STORAGE_KEY, String(sec)); } catch { /* ignore */ }
+  const sel = $('sel-ui-poll');
+  if (sel) sel.value = String(sec);
+  refreshCountdown = sec;
+  updateRefreshTimerLabel();
+}
+
+function updateRefreshTimerLabel() {
+  const el = $('refresh-timer');
+  if (el) el.textContent = `UI ${refreshCountdown}s`;
+}
+
+function renderCadenceHint(sched) {
+  const el = $('ingest-cadence-hint');
+  if (!el || !sched?.intervals) return;
+  const iv = sched.intervals;
+  el.textContent =
+    `Pulls: RSS ${iv.rss}m · GDELT ${iv.gdelt}m · USGS ${iv.usgs}m · GDACS ${iv.gdacs}m · UI ${state.pollSec}s`;
+}
+
+async function fetchSchedule() {
+  try {
+    const r = await fetch('/api/schedule');
+    if (!r.ok) return;
+    const data = await r.json();
+    state.ingestPreset = data.preset || 'normal';
+    const sel = $('sel-ingest-preset');
+    if (sel) {
+      if (data.preset === 'custom') sel.value = 'normal';
+      else sel.value = data.preset || 'normal';
+    }
+    renderCadenceHint(data);
+  } catch { /* optional */ }
+}
+
+async function applyIngestPreset(preset) {
+  const sel = $('sel-ingest-preset');
+  try {
+    const r = await fetch('/api/schedule', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preset }),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      if (sel) sel.value = state.ingestPreset;
+      return;
+    }
+    state.ingestPreset = data.preset || preset;
+    renderCadenceHint(data);
+  } catch {
+    if (sel) sel.value = state.ingestPreset;
+  }
+}
+
 async function fetchRelated(eventId) {
   const block = $('related-block');
   const list = $('related-list');
@@ -708,7 +776,7 @@ $('shortcuts-modal').querySelector('.shortcuts-backdrop').onclick = closeShortcu
 renderShortcuts();
 
 let searchTimer;
-let refreshCountdown = REFRESH_SEC;
+let refreshCountdown = state.pollSec;
 let refreshInFlight = false;
 
 async function forceRefresh() {
@@ -734,7 +802,7 @@ async function forceRefresh() {
       if (anyRecent && Date.now() - t0 > 4000) break;
     }
     await fetchEvents();
-    refreshCountdown = REFRESH_SEC;
+    refreshCountdown = state.pollSec;
   } catch {
     btn.textContent = 'Failed';
     setTimeout(() => { btn.textContent = prevLabel; }, 2000);
@@ -752,14 +820,20 @@ function tickClock() {
 function tickRefresh() {
   refreshCountdown--;
   if (refreshCountdown <= 0) {
-    refreshCountdown = REFRESH_SEC;
+    refreshCountdown = state.pollSec;
     fetchEvents();
     fetchStats();
   }
-  $('refresh-timer').textContent = `auto ${refreshCountdown}s`;
+  updateRefreshTimerLabel();
 }
 
 $('refresh-now').onclick = forceRefresh;
+
+state.pollSec = loadPollSec();
+setPollSec(state.pollSec);
+$('sel-ui-poll').onchange = (e) => setPollSec(+e.target.value);
+$('sel-ingest-preset').onchange = (e) => applyIngestPreset(e.target.value);
+fetchSchedule();
 
 function inInput() {
   const tag = document.activeElement?.tagName;

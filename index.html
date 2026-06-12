@@ -87,7 +87,27 @@
         <span id="refresh-timer" class="refresh-timer">auto 60s</span>
       </div>
     </div>
+    <div class="cadence-row">
+      <label class="cadence-field">
+        <span class="cadence-label">UI reload</span>
+        <select id="sel-ui-poll" title="How often the browser re-reads the local database">
+          <option value="30">Every 30s</option>
+          <option value="60" selected>Every 60s</option>
+          <option value="120">Every 2 min</option>
+          <option value="300">Every 5 min</option>
+        </select>
+      </label>
+      <label class="cadence-field">
+        <span class="cadence-label">Feed pulls</span>
+        <select id="sel-ingest-preset" title="How often the server fetches external feeds">
+          <option value="fast">Fast (5–10 min)</option>
+          <option value="normal" selected>Normal (10–20 min)</option>
+          <option value="slow">Slow (20–45 min)</option>
+        </select>
+      </label>
+    </div>
     <div id="ingest-channels"></div>
+    <div id="ingest-cadence-hint" class="ingest-cadence-hint"></div>
   </footer>
 </aside>
 

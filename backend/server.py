@@ -8,37 +8,37 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-
 from pydantic import BaseModel, Field
 
-from . import db, ingest, intel, recon
+from . import db, ingest, intel, recon, schedule
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NO_INGEST = os.environ.get("GLOBE_NO_INGEST") == "1"
 _refresh_lock = threading.Lock()
+_scheduler: BackgroundScheduler | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _scheduler
     db.get_conn()
-    scheduler = None
     if not NO_INGEST:
-        # first ingest in a daemon thread so startup isn't blocked
         threading.Thread(target=ingest.run_all, daemon=True).start()
-        scheduler = BackgroundScheduler(timezone="UTC")
-        scheduler.add_job(ingest.ingest_gdelt, "interval", minutes=15)
-        scheduler.add_job(ingest.ingest_rss, "interval", minutes=10)
-        scheduler.add_job(ingest.ingest_usgs, "interval", minutes=15)
-        scheduler.add_job(ingest.ingest_gdacs, "interval", minutes=20)
-        scheduler.add_job(db.prune, "interval", hours=6)
-        scheduler.add_job(intel.refresh_all, "interval", minutes=3)
+        _scheduler = BackgroundScheduler(timezone="UTC")
+        schedule.register_jobs(_scheduler)
+        _scheduler.add_job(db.prune, "interval", hours=6, id="prune")
+        _scheduler.add_job(intel.refresh_all, "interval", minutes=3, id="intel_refresh")
         threading.Thread(target=intel.refresh_all, daemon=True).start()
-        scheduler.start()
+        _scheduler.start()
+        app.state.scheduler = _scheduler
+    else:
+        app.state.scheduler = None
     yield
-    if scheduler:
-        scheduler.shutdown(wait=False)
+    if _scheduler:
+        _scheduler.shutdown(wait=False)
+        _scheduler = None
 
 
 app = FastAPI(title="globe", lifespan=lifespan)
@@ -106,6 +106,39 @@ def recon_scan(body: ReconRequest):
 @app.get("/api/stats")
 def stats():
     return db.stats()
+
+
+class ScheduleUpdate(BaseModel):
+    preset: str | None = None
+    rss: int | None = Field(None, ge=5, le=120)
+    gdelt: int | None = Field(None, ge=5, le=120)
+    usgs: int | None = Field(None, ge=5, le=120)
+    gdacs: int | None = Field(None, ge=5, le=120)
+
+
+@app.get("/api/schedule")
+def get_schedule():
+    sched = getattr(app.state, "scheduler", None)
+    return schedule.status(sched)
+
+
+@app.patch("/api/schedule")
+def patch_schedule(body: ScheduleUpdate):
+    if NO_INGEST:
+        return {"ok": False, "error": "ingest disabled (GLOBE_NO_INGEST=1)"}
+    sched = getattr(app.state, "scheduler", None)
+    if not sched:
+        return {"ok": False, "error": "scheduler not running"}
+    try:
+        if body.preset:
+            intervals = schedule.apply_preset(body.preset)
+        else:
+            patch = {k: v for k, v in body.model_dump().items() if v is not None and k != "preset"}
+            intervals = schedule.apply_intervals(patch) if patch else schedule.load()
+        schedule.register_jobs(sched, intervals)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, **schedule.status(sched)}
 
 
 @app.post("/api/refresh")
