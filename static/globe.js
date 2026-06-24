@@ -577,7 +577,7 @@ function buildTexture(countriesGeo) {
 
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = 4;
   // No mipmaps: the shader thresholds this mask, and mip averaging of
   // land (0) with ocean (1) at the poles reads as mid-gray "shallow shelf",
   // painting a turquoise bullseye over the polar caps.
@@ -585,7 +585,7 @@ function buildTexture(countriesGeo) {
   waterTex.colorSpace = THREE.NoColorSpace;
   waterTex.generateMipmaps = false;
   waterTex.minFilter = THREE.LinearFilter;
-  waterTex.anisotropy = 8;
+  waterTex.anisotropy = 4;
   return { map: tex, waterMap: waterTex };
 }
 
@@ -758,10 +758,13 @@ const GLOBE_FRAG = `
     vec3 col = dayCol * mix(nightTint, vec3(1.0), day);
 
     vec3 refl = reflect(-sunDir, N);
-    float spec = pow(max(dot(refl, viewDir), 0.0), 36.0) * day * isWater;
+    float _s = max(dot(refl, viewDir), 0.0);
+    float _s2 = _s * _s; float _s4 = _s2 * _s2; float _s16 = _s4 * _s4;
+    float spec = (_s16 * _s16) * _s4 * day * isWater;
     col += vec3(0.50, 0.70, 0.90) * spec * 0.22 * max(nightStrength, 0.35);
 
-    float rim = pow(1.0 - max(dot(N, viewDir), 0.0), 2.5);
+    float _rv = 1.0 - max(dot(N, viewDir), 0.0);
+    float rim = _rv * _rv * sqrt(_rv);
     col += vec3(0.20, 0.40, 0.60) * rim * (0.10 + 0.18 * mix(1.0, day, nightStrength));
 
     gl_FragColor = vec4(col, 1.0);
@@ -777,7 +780,8 @@ const ATMOS_FRAG = `
     vec3 viewDir = normalize(cameraPos - vWorldPos);
     float viewDot = dot(N, viewDir);
     float sunDot = dot(N, sunDir);
-    float rim = pow(1.0 - max(viewDot, 0.0), 4.0);
+    float _av = 1.0 - max(viewDot, 0.0); _av *= _av;
+    float rim = _av * _av;
     float daySide = smoothstep(-0.1, 0.15, sunDot);
     vec3 color = mix(vec3(0.06, 0.08, 0.14), vec3(0.35, 0.60, 0.82), daySide);
     float intensity = rim * mix(0.04, 0.16, daySide);
@@ -822,6 +826,9 @@ export class Globe {
     this._terminator = null;
     this._flyAnim = null;
     this._selRing = null;
+    this._lastSunMs = -Infinity;
+    this._lastSunDir = null;
+    this._prevTermSun = null;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x060a10);
@@ -834,7 +841,12 @@ export class Globe {
       .sort((a, b) => b.d - a.d)[0].v;
     this.camera.position.copy(best.multiplyScalar(2.8));
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: false,
+      stencil: false,
+      powerPreference: 'high-performance',
+    });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(this.renderer.domElement);
 
@@ -880,7 +892,7 @@ export class Globe {
       vertexShader: GLOBE_VERT,
       fragmentShader: GLOBE_FRAG,
     });
-    this._globeMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), this._globeMat);
+    this._globeMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 72), this._globeMat);
     this.scene.add(this._globeMesh);
 
     // Offline photo earth (bundled 2K texture)
@@ -890,7 +902,7 @@ export class Globe {
         loader.load('/data/textures/earth-day-2k.jpg', resolve, undefined, reject);
       });
       photo.colorSpace = THREE.SRGBColorSpace;
-      photo.anisotropy = 8;
+      photo.anisotropy = 4;
       this._photoMap = photo;
     } catch {
       this._photoMap = null;
@@ -902,7 +914,7 @@ export class Globe {
       fragmentShader: ATMOS_FRAG,
       transparent: true, depthWrite: false, side: THREE.BackSide,
     });
-    this.scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.018, 96, 72), atmosMat));
+    this.scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.018, 72, 54), atmosMat));
     this.scene.add(buildBorders(borders));
 
     const starPos = [];
@@ -1189,23 +1201,31 @@ export class Globe {
   }
 
   _tick() {
+    const now = performance.now();
     if (this._flyAnim) {
       const a = this._flyAnim;
-      const t = Math.min((performance.now() - a.t0) / a.dur, 1);
+      const t = Math.min((now - a.t0) / a.dur, 1);
       const e = 1 - Math.pow(1 - t, 3);
       const q = a.qFrom.clone().slerp(a.qTo, e);
       this.camera.position.copy(a.from.clone().applyQuaternion(q).setLength(a.dist));
       if (t >= 1) this._flyAnim = null;
     }
     this.controls.update();
-    const sun = this.liveSun ? subsolarDirection(new Date()) : this._frozenSun;
+    if (this.liveSun && now - this._lastSunMs > 1000) {
+      this._lastSunMs = now;
+      this._lastSunDir = subsolarDirection(new Date());
+    }
+    const sun = this.liveSun ? this._lastSunDir ?? subsolarDirection(new Date()) : this._frozenSun;
     if (this.sunUniform) this.sunUniform.value = sun;
     if (this._terminator) {
-      const pts = terminatorPositions(sun);
-      this._terminator.geometry.setAttribute(
-        'position',
-        new THREE.BufferAttribute(new Float32Array(pts), 3)
-      );
+      if (sun !== this._prevTermSun) {
+        this._prevTermSun = sun;
+        const pts = terminatorPositions(sun);
+        this._terminator.geometry.setAttribute(
+          'position',
+          new THREE.BufferAttribute(new Float32Array(pts), 3)
+        );
+      }
       this._terminator.visible = this.dayNightVisible;
     }
     this.camUniform && this.camUniform.value.copy(this.camera.position);
