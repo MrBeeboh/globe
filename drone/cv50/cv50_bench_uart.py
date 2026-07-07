@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""CV50 USB-TTL bench tool for HAL2026 — loopback, sniff, and active probe.
+"""CV50 USB-TTL bench tool for HAL2026 — loopback, sniff, and boot capture.
 
 Run on the machine with the CP2102 adapter (NOT in the cloud session).
 
     python3 cv50_bench_uart.py --loopback   # adapter self-test: short TXD<->RXD first
-    python3 cv50_bench_uart.py --sniff      # passive listen across bauds
-    python3 cv50_bench_uart.py --probe      # transmit wake/query candidates, listen after each
+    python3 cv50_bench_uart.py --sniff      # listen across bauds, parse HR-LINK frames
+    python3 cv50_bench_uart.py --bootwatch  # open port, then hot-plug the CV50: captures
+                                            # anything the sensor emits at power-up
 
-Wiring for sniff/probe (crossed!):
-    CV50 green  (TX) -> adapter RXD
-    CV50 yellow (RX) -> adapter TXD
+Wiring (crossed!):
+    CV50 green  (Tx) -> adapter RXD
+    CV50 yellow (Rx) -> adapter TXD
     CV50 red -> 5V/VBUS, black -> GND
-Confirm the laser is visible on a phone camera BEFORE trusting any silent result.
+
+Protocol (from reference/CV50.pdf): UART 115200 8N1, streaming only, no commands.
+Frame: DF 32 00 40 <seq> 04 <dist_lo> <dist_hi> <str_lo> <str_hi> <cksum=sum&0xFF>
+Configuration (protocol/orientation) is done ONLY via https://tof.corvon.tech —
+open the COM port there FIRST, then hot-plug the sensor (auto-detect ~100 ms).
 
 Requires: pip install pyserial
 """
@@ -28,17 +33,8 @@ except ImportError:
 
 DEFAULT_PORT_GLOB = "/dev/serial/by-id/usb-Silicon_Labs_CP2102*"
 BAUDS = [115200, 9600, 57600, 230400, 460800, 921600]
-HRLINK_HDR = bytes([0xDF, 0x32])
-
-# Candidate wake/query frames. Placeholders until reference/CV50.pdf command set
-# is extracted — add real HR-LINK commands as (label, bytes) tuples.
-PROBE_FRAMES = [
-    ("CR/LF nudge", b"\r\n"),
-    ("HR-LINK header echo", bytes([0xDF, 0x32, 0x00, 0x40])),
-    ("Generic TOF query 0x55", bytes([0x55])),
-    ("Modbus-ish read (01 03 00 00 00 01 84 0A)",
-     bytes([0x01, 0x03, 0x00, 0x00, 0x00, 0x01, 0x84, 0x0A])),
-]
+FRAME_LEN = 11
+HDR = bytes([0xDF, 0x32, 0x00, 0x40])
 
 
 def find_port(explicit):
@@ -50,18 +46,37 @@ def find_port(explicit):
     return hits[0]
 
 
-def report(data):
-    if not data:
+def parse_frames(buf):
+    """Yield (distance_mm, strength, cksum_ok) for each HR-LINK frame in buf."""
+    i = 0
+    while True:
+        i = buf.find(HDR, i)
+        if i < 0 or i + FRAME_LEN > len(buf):
+            return
+        f = buf[i:i + FRAME_LEN]
+        dist = f[6] | (f[7] << 8)
+        strength = f[8] | (f[9] << 8)
+        ok = (sum(f[:10]) & 0xFF) == f[10]
+        yield dist, strength, ok
+        i += FRAME_LEN
+
+
+def summarize(buf):
+    if not buf:
         return "SILENT"
-    tag = "  <-- HR-LINK 0xDF32 FOUND!" if HRLINK_HDR in data else ""
-    return f"{len(data)} bytes: {data[:48].hex(' ')}{tag}"
+    frames = list(parse_frames(buf))
+    if not frames:
+        return f"{len(buf)} bytes (no HR-LINK frames): {buf[:48].hex(' ')}"
+    good = [f for f in frames if f[2]]
+    last = (good or frames)[-1]
+    return (f"{len(buf)} bytes, {len(frames)} HR-LINK frames "
+            f"({len(good)} checksum-OK), last: {last[0]} mm strength {last[1]}")
 
 
-def listen(s, seconds):
-    s.reset_input_buffer()
+def listen(s, seconds, limit=8192):
     end = time.time() + seconds
     buf = bytearray()
-    while time.time() < end and len(buf) < 4096:
+    while time.time() < end and len(buf) < limit:
         buf += s.read(256)
     return bytes(buf)
 
@@ -82,28 +97,30 @@ def cmd_loopback(port):
 def cmd_sniff(port, seconds):
     for baud in BAUDS:
         with serial.Serial(port, baud, timeout=0.2) as s:
+            s.reset_input_buffer()
             data = listen(s, seconds)
-        print(f"{baud:>7} baud, {seconds}s: {report(data)}")
-        if HRLINK_HDR in data:
-            print(f"*** CV50 is streaming at {baud} baud — UART path is ALIVE. ***")
+        print(f"{baud:>7} baud, {seconds:.0f}s: {summarize(data)}")
+        if HDR in data:
+            print(f"*** CV50 is streaming at {baud} baud — UART path ALIVE. ***")
             return
-    print("All bauds silent. Verify laser glow + crossed wiring, then run --probe.")
+    print("All bauds silent. With crossed wiring + laser glow confirmed, the sensor is")
+    print("not in UART streaming mode: run --bootwatch, then use tof.corvon.tech")
+    print("(open port first, hot-plug sensor) to set Protocol=APM, Orientation=Down.")
 
 
-def cmd_probe(port, seconds):
-    for baud in (115200, 9600):
-        print(f"--- {baud} baud ---")
-        with serial.Serial(port, baud, timeout=0.2) as s:
-            for label, frame in PROBE_FRAMES:
-                s.reset_input_buffer()
-                s.write(frame)
-                s.flush()
-                data = listen(s, seconds)
-                print(f"  sent [{label}] {frame.hex(' ')} -> {report(data)}")
-                if data:
-                    return
-    print("No response to any probe. Sensor is not in a UART mode on these pins;")
-    print("next steps: tof.corvon.tech with crossed wiring, then Corvon email.")
+def cmd_bootwatch(port, seconds):
+    print("Port open. UNPLUG the CV50's red (5V) wire now, wait 2 s, then re-plug it.")
+    print(f"Capturing for {seconds:.0f}s ...")
+    with serial.Serial(port, 115200, timeout=0.2) as s:
+        s.reset_input_buffer()
+        data = listen(s, seconds, limit=32768)
+    print(f"Boot capture: {summarize(data)}")
+    if data and HDR not in data:
+        print("Non-HR-LINK bytes at boot — that's the config/handshake traffic the web")
+        print("tool listens for. Good sign: the tool should detect it with this wiring.")
+    elif not data:
+        print("Nothing at boot either. Double-check green->RXD, then try one TX/RX swap;")
+        print("if still dead, escalate to Corvon (see FABLE5_CV50_DIAGNOSIS.md draft).")
 
 
 def main():
@@ -114,7 +131,7 @@ def main():
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--loopback", action="store_true")
     mode.add_argument("--sniff", action="store_true")
-    mode.add_argument("--probe", action="store_true")
+    mode.add_argument("--bootwatch", action="store_true")
     args = ap.parse_args()
 
     port = find_port(args.port)
@@ -124,7 +141,7 @@ def main():
     elif args.sniff:
         cmd_sniff(port, args.seconds)
     else:
-        cmd_probe(port, args.seconds)
+        cmd_bootwatch(port, max(args.seconds, 15.0))
 
 
 if __name__ == "__main__":

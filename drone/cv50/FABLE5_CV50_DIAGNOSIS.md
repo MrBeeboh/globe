@@ -1,156 +1,168 @@
-# CV50 Rangefinder — Fable 5 Diagnosis & Bench Plan
+# CV50 Rangefinder — Fable 5 Diagnosis & Bench Plan (rev 2)
 
 **Date:** 2026-07-07
-**Input:** `HANDOFF_CV50_Claude_Fable5.md` (Grok session) + remote research
-**Scope:** Analysis only — this session runs in a cloud container with no access to HAL's
-serial ports or the bench hardware. Every test below runs on HAL.
+**Inputs:** `HANDOFF_CV50_Claude_Fable5.md` (Grok session), `reference/CV50.pdf` (read in
+full), corvon.tech ToF tool page screenshot, bench photo (laser glow on adapter power),
+CORVON743V1 hwdef from ArduPilot master.
+**Scope:** Analysis — the cloud session has no serial access; all tests run on HAL2026.
 
 ---
 
-## The one-line verdict
+## What changed in rev 2
 
-Every UART test so far has been **passive listening**, and the handoff's own USB-TTL
-wiring table is **straight-through, not crossed** — so the 0-byte results to date do
-not yet prove the sensor is dead or mode-locked. Two cheap bench fixes (swap TX/RX at
-the adapter, then let the web config tool talk to it) are the most likely path to a
-working sensor. The I2C path has a separate unproven dependency: **bus 1 pull-ups**.
+- **CV50.pdf read end-to-end.** It documents *zero* commands: UART mode is pure
+  auto-streaming, I2C is a simple register map at 0x51. There is no serial command to
+  switch modes — **the web tool is the only configuration path.**
+- **The ToF tool page confirms the output protocol is a persisted setting**:
+  UART / I2C / APM (ArduPilot MAVLink) / PX4 / MSP / MODBUS / AUTO. A unit set to a
+  UART-family protocol will never ACK on I2C, and a unit set to I2C will never stream
+  UART. **One saved setting explains both dead interfaces at once.**
+- **The tool's connect procedure requires a specific order**: open the COM port FIRST,
+  then hot-plug the sensor — it auto-detects within **~100 ms of sensor boot**. If the
+  CV50 was already powered when "Connect" was clicked, **"awaiting device" is the
+  expected result**, not a fault.
+- **Bench power ruled out:** laser glow (purple, 905 nm) photographed with the CV50 on
+  CP2102 power. Spec draw is only 50 mA @ 5 V.
+- **The two vendor sources contradict each other on I2C.** The PDF manual says
+  pin 1 = SCL, pin 2 = SDA, address **0x51** (and its own descriptions are swapped:
+  "SCL — I2C Data Line"). The corvon.tech web spec says pin 1 = TX/**SDA**,
+  pin 2 = RX/**SCL**, address **0x31**. Both pin orders and both addresses must be
+  treated as possible: the SDA/SCL swap test is mandatory, and any probe must try
+  0x51 *and* 0x31 (the existing `cv50_i2c_probe.lua` already does).
+
+## Facts from CV50.pdf (authoritative)
+
+**Pins (terminal diagram):** 1 = SCL/TX, 2 = SDA/RX, 3 = VCC 5V, 4 = GND.
+**Cable order at the SH1.0-4P connector:** GND, 5V, Rx(SDA), Tx(SCL).
+Verify wire colors by *position in the connector*, not by faith: expected black=GND,
+red=5V, yellow=Rx/SDA, green=Tx/SCL.
+
+**Electrical:** 3.5–5.5 V supply, 50 mA @ 5 V, 1–200 Hz rate, 905 nm.
+
+**UART (115200 8N1), streaming only — no commands:**
+
+| Byte | Meaning |
+|------|---------|
+| 0 | Header `0xDF` |
+| 1 | Device ID `0x32` |
+| 2 | System ID `0x00` |
+| 3 | Message ID `0x40` |
+| 4 | Packet sequence `0x00–0xFF` |
+| 5 | Payload length `0x04` |
+| 6–7 | Distance mm, little-endian |
+| 8–9 | Signal strength, little-endian |
+| 10 | Checksum = sum of bytes 0–9 (low 8 bits) |
+
+**I2C:** 7-bit address **0x51 per the PDF manual, 0x31 per the corvon.tech web spec** —
+probe both. Reg 0x00 = device ID (0x32), 0x01/0x02 = distance mm LE, 0x03/0x04 =
+strength LE. Up to 400 kHz. Pin mapping also conflicts: PDF pin 1 = SCL / pin 2 = SDA;
+web spec pin 1 = SDA / pin 2 = SCL. In UART mode both agree pin 1 = TX, pin 2 = RX.
 
 ---
 
-## Finding 1 — The USB-TTL bench was almost certainly wired straight-through (HIGH confidence)
+## Root-cause picture
 
-Handoff §4 table:
+Two independent faults stack to explain every observation:
 
-| CV50 wire | → CP2102 |
-|-----------|----------|
-| Yellow (CV50 **Rx**) | **RX** on adapter |
-| Green (CV50 **Tx**) | **TX** on adapter |
+1. **Bench (PC) side:** the USB-TTL run was wired straight-through per handoff §4
+   (CV50 Rx→adapter RX, CV50 Tx→adapter TX). On a CP2102, TXD is the adapter's
+   *output*, so this wiring reads 0 bytes from a healthy sensor **and** blocks the web
+   tool's handshake — and the tool was additionally used with the wrong connect order
+   (sensor already powered before the port was opened).
+2. **Sensor side:** the saved protocol setting is unknown (shipped state). If it is
+   I2C, MODBUS, MSP, or PX4, the FC-side UART tests (HR-LINK/`RNGFND1_TYPE` sweep at
+   SERIAL7_PROTOCOL=9) would all fail even with perfect wiring; if it is any
+   UART-family setting, the FC I2C scan on bus 1 would find nothing even with perfect
+   wiring. Either way, one setting kills the *other* interface by design.
 
-On essentially every CP2102 breakout, the pin labeled **TXD is the adapter's output**.
-Wired as tabulated, CV50 TX drives the adapter's TX (two outputs fighting) and the
-adapter's RX listens to CV50 RX (two inputs, silent). **0 bytes is guaranteed with this
-wiring even if the sensor is streaming perfectly.** The same error would make
-`tof.corvon.tech` show "awaiting device" forever, because the tool's handshake never
-reaches the sensor's RX pin.
+Secondary open item: external I2C bus 1 (PB6/PB7) has no internal pull-up flags in the
+hwdef and has never ACKed *any* device — if the I2C path is ever needed, prove the bus
+first (pull-up voltage test below).
 
-The handoff's §10.A.3 swap suggestion was never confirmed done. **Do it first.**
+---
 
-Correct bench wiring:
+## Bench plan for HAL2026 (stop at first success)
+
+**Step 1 — rewire the adapter (crossed):**
 
 | CV50 wire | → CP2102 |
 |-----------|----------|
 | Black (GND) | GND |
-| Red (5V) | 5V / VBUS (not 3.3V!) |
-| Green (CV50 **Tx**) | **RXD** on adapter |
-| Yellow (CV50 **Rx**) | **TXD** on adapter |
+| Red (5V) | 5V / VBUS |
+| Green (Tx/SCL) | **RXD** |
+| Yellow (Rx/SDA) | **TXD** |
 
-## Finding 2 — Sensor boot on the bench was never verified (MEDIUM)
+**Step 2 — adapter self-test (once):** disconnect the CV50 data wires, short adapter
+TXD↔RXD, run `python3 cv50_bench_uart.py --loopback`. Proves adapter + tooling.
 
-Laser-visible-on-phone-camera was only recorded while powered from the FC Optical plug.
-Some CP2102 breakouts expose only 3.3 V, or a "5V" pin that sags under the CV50's laser
-load. **Before any sniff: point a phone camera at the CV50 on adapter power and confirm
-the emitter glows.** No glow → no data, full stop; fix power first.
+**Step 3 — sniff:** wire per Step 1, run `python3 cv50_bench_uart.py --sniff`.
+The script now parses HR-LINK frames and prints live distance in mm. If distance
+appears → sensor is in UART streaming mode; skip to Step 5.
 
-## Finding 3 — I2C bus 1 has never been proven alive (MEDIUM-HIGH)
+**Step 4 — web tool, correct order (the decisive test):**
+1. Close every other program using the port (no Python running).
+2. Unplug the CV50 from the adapter (at minimum its red 5V wire).
+3. Chrome → https://tof.corvon.tech → Connect → pick the CP2102 COM port.
+4. **Now** plug the CV50 back in. Auto-detect fires within ~100 ms of boot.
+5. When it connects: set **Protocol = APM (ArduPilot)**, **Orientation = Down**,
+   Save changes, then re-plug the sensor wires (required after protocol changes).
+6. Confirm live distance + CRC errors 0 in the tool's verification panel.
 
-Bus 0 finding the IST8310 + DPS310 proves the **Lua I2C API**, not the **external bus
-hardware**. The CORVON743V1 hwdef assigns I2C1 to PB6/PB7 with **no internal PULLUP
-flags** — the bus only works if the board carries physical pull-up resistors (unknown)
-or the attached device provides them (CV50: unknown). A full-address-space scan
-returning **zero** devices is exactly what a pull-up-less (floating) bus looks like.
+If the tool still never detects it with correct wiring and correct order (try one
+TX/RX swap regardless — labels lie): the unit is likely faulty → Step 7.
 
-Two-minute multimeter test: FC powered, CV50 **disconnected**, measure GPS-plug SDA and
-SCL pins to GND. **~3.3 V on both** = pull-ups exist, bus is viable, keep debugging
-wiring/address. **0 V / floating** = the scan can never succeed as-is; add 4.7 kΩ
-pull-ups to 3.3 V or abandon the I2C path.
+**Step 5 — back on the FC (after APM protocol is saved):**
+APM mode is described as MAVLink on the tool page. Configure:
+- `SERIAL7_PROTOCOL = 2` (MAVLink2; try 1 if no joy), `SERIAL7_BAUD = 115`
+- `RNGFND1_TYPE = 10` (MAVLink), `RNGFND1_ORIENT = 25`, `RNGFND1_MAX` ≈ 45 m
+- If instead you saved plain **UART** protocol: `SERIAL7_PROTOCOL = 28` (Scripting) and
+  use `cv50_hrlink_serial.lua`, or keep the web-tool APM route — simpler.
+- Power-cycle, check Mission Planner → Status → `rangefinder1`.
 
-Also worth one try each (already suggested, never verified): SDA↔SCL swap; and if you
-own any known-good I2C module (external compass, baro breakout), plug it into the GPS
-plug SDA/SCL and re-scan — if a known-good device also fails to ACK, the bus or plug
-pin assumption (BL=SDA / WH=SCL) is wrong, not the CV50.
+**Step 6 — I2C path (only if you *want* I2C instead of UART):**
+1. In the web tool set Protocol = I2C first — otherwise the sensor will never ACK.
+2. Meter the GPS-plug SDA/SCL pins with FC powered, sensor disconnected: ~3.3 V both
+   = pull-ups present; floating = add 4.7 kΩ to 3.3 V or abandon I2C.
+3. Wire yellow→BL, green→WH; probe **both 0x51 and 0x31**; if no ACK, swap
+   yellow↔green once (the PDF and web spec disagree on which wire is SDA, so the
+   swap is a required test, not a guess), power-cycle, re-run `cv50_i2c_probe.lua`.
 
-## Finding 4 — The sensor may need configuration before it streams (MEDIUM)
-
-The handoff notes the Corvon tool must "set APM protocol + downward orientation before
-ArduPilot UART use." That implies the factory mode is **not** the APM streaming mode
-ArduPilot's `RNGFND1_TYPE` sweep was hunting for, and may not stream at all until
-configured or queried. This chains with Finding 1: fix the crossing → the web tool can
-finally handshake → set APM mode → FC UART path comes alive.
-
-**Action for the remote session:** upload `reference/CV50.pdf` into the chat. I can
-read PDFs and will extract the exact HR-LINK command bytes (mode switch, output enable,
-I2C address) and turn them into an active-probe script — every script so far only
-listened; none ever *sent* anything to the sensor.
-
----
-
-## Ordered bench plan (stop at first success)
-
-**Phase 0 — 2 minutes, no software**
-1. CV50 on CP2102 power only: phone-camera check for laser glow.
-2. Continuity-check all 4 wires end-to-end; confirm which color lands on CV50 pin 2
-   (SCL/TX) vs pin 3 (SDA/RX) at the sensor connector, not by cable-color faith.
-
-**Phase 1 — UART bench (decisive)**
-3. Loopback self-test: disconnect CV50, short adapter TXD↔RXD, run
-   `cv50_bench_uart.py --loopback`. Proves adapter + tooling.
-4. Wire per Finding 1 (crossed). Run `cv50_bench_uart.py --sniff`.
-5. Still silent → `cv50_bench_uart.py --probe` (transmits wake/query candidates).
-6. With crossed wiring, retry https://tof.corvon.tech in Chrome. If it connects:
-   set **APM protocol + downward**, then move the sensor back to FC SERIAL7
-   (`SERIAL7_PROTOCOL=9`, `SERIAL7_BAUD=115`, `RNGFND1_TYPE` per manual — re-check
-   the PDF for which type APM mode emulates) and test in Mission Planner.
-
-**Phase 2 — I2C (only if Phase 1 dead)**
-7. Pull-up voltage test (Finding 3). Floating → add 4.7 kΩ pull-ups or stop.
-8. One SDA↔SCL swap, power-cycle (not reboot), re-run `cv50_i2c_probe.lua`.
-9. Optional: known-good I2C device on the GPS plug to validate the bus itself.
-
-**Phase 3 — Corvon escalation** (template below). If they confirm a hardware fault or
-an unswitchable mode, invoke handoff §10.D: fly the maiden without the rangefinder.
+**Step 7 — escalate to Corvon** (draft below), including the serial number and a note
+that the web tool with correct hot-plug order never detects the unit.
 
 ---
 
 ## Corvon support email draft
 
 > **To:** aeroselfie-support@corvon.tech
-> **Subject:** CV50 emits no UART data and no I2C ACK — factory mode / mode-switch procedure?
+> **Subject:** CV50 not detected by tof.corvon.tech (correct hot-plug order) and silent on UART/I2C
 >
 > Hello,
 >
-> I have a CV50 (bought [date/source]) wired to a CORVON743V1 (AERO SELFIE H743,
-> ArduCopter 4.7.0-beta7) and it produces no data on either interface:
+> My CV50 (S/N [label]) powers up (905 nm emitter visible on camera) but:
 >
-> - **UART:** 0 bytes at 115200 (and 9600/57600/921600) on FC SERIAL7/UART8 *and*
->   directly to a PC via CP2102 USB-TTL with TX/RX crossed both ways. No HR-LINK
->   `DF 32` frames. https://tof.corvon.tech stays at "awaiting device."
-> - **I2C:** SDA/SCL on the FC GPS-plug I2C bus; a full 7-bit address scan via
->   ArduPilot Lua finds zero devices (the same scan finds the onboard IST8310 and
->   DPS310 on the internal bus, so the scanner works). Tried both 0x51 and 0x31.
-> - The unit powers up and the emitter is visible on a phone camera, so it is not dead.
+> - tof.corvon.tech never detects it: CP2102 adapter, port opened first, sensor
+>   hot-plugged after, TX/RX crossed (and swap also tried), 115200.
+> - No HR-LINK `DF 32` frames on a direct PC sniff at 9600–921600 baud.
+> - No I2C ACK at 0x51 (or anywhere in a full 7-bit scan) on the flight controller's
+>   external bus; the same scanner sees the FC's onboard compass/baro, and SDA/SCL
+>   swap was tried.
 >
 > Questions:
-> 1. What is the factory default interface/mode — UART streaming, UART query, or I2C?
-> 2. Does the CV50 select UART vs I2C from pin states at power-up, or is it a stored
->    setting? What is the exact procedure to force UART/APM mode?
-> 3. What is the correct I2C address — 0x31 or 0x51 — and does the module include
->    internal I2C pull-up resistors?
-> 4. Does the CV50 stream HR-LINK frames unprompted, or only after an enable command?
->    If the latter, please send the command bytes.
->
-> Serial number: [from label]. I can run any test you suggest on the bench.
+> 1. What protocol setting does the CV50 ship with from the factory?
+> 2. Is there any way to reset/force the protocol without the web tool detecting it?
+> 3. Your manual (pin 1 = SCL, address 0x51) and your web spec (pin 1 = SDA, address
+>    0x31) contradict each other on the I2C pinout and address — which is correct?
+> 4. If the unit is faulty, how do I arrange a replacement? Purchased [date/source].
 >
 > Thanks, Mike
 
 ---
 
-## What this session verified remotely
+## Reference: remotely verified board facts
 
-- **CORVON743V1 hwdef** (`hwdef.dat`, ArduPilot master): `I2C_ORDER I2C2 I2C1` — bus 1
-  = I2C1 = PB6 (SCL) / PB7 (SDA), external connector; **no PULLUP flags** on either
-  I2C bus. `SERIAL_ORDER OTG1 USART1 USART2 USART3 UART4 USART6 UART7 UART8` →
-  SERIAL7 = UART8 ("User" UART). The prior agent's bus-1 correction and the
-  SERIAL7/UART8 assumption are both **confirmed correct**.
-- The CV50 is sold as the **AERO SELFIE R50-C** (50 m, ±2 cm, 50 Hz dToF); an English
-  manual exists at aeroselfie.myshopify.com → Manual Books (vendor sites are blocked
-  from this container; download it on HAL and add to `reference/`).
+CORVON743V1 hwdef (ArduPilot master): `I2C_ORDER I2C2 I2C1` → Lua bus 1 = I2C1 =
+PB6 (SCL)/PB7 (SDA) external connector, **no PULLUP flags**; `SERIAL_ORDER` confirms
+SERIAL7 = UART8 ("User"). Prior agent's bus-1 and SERIAL7 conclusions were correct.
+The CV50 is sold as the AERO SELFIE **R50-C**; an English manual is on
+aeroselfie.myshopify.com → Manual Books.
