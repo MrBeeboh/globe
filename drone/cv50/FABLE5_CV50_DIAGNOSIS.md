@@ -1,4 +1,30 @@
-# CV50 Rangefinder — Fable 5 Diagnosis & Bench Plan (rev 2)
+# CV50 Rangefinder — Fable 5 Diagnosis & Bench Plan (rev 3)
+
+> **REV 3 — READ FIRST (2026-07-08).** Corvon support (Angela) replied:
+> the CV50 default is an **auto-adaptive serial protocol** supporting
+> ArduPilot/PX4/INAV, and the **I2C interface is a closed protocol — no ACK on a
+> bus scan is expected and ArduPilot I2C integration is not supported.**
+>
+> Implications:
+> 1. **Abandon the I2C path permanently.** The empty bus-1 scan was correct behavior.
+>    Ignore every I2C step below (kept only for the record).
+> 2. **Auto-adaptive almost certainly means the sensor listens before it speaks**:
+>    it waits to detect FC traffic (e.g. MAVLink heartbeats) on its RX pin, then picks
+>    a protocol and starts transmitting. Every failed test to date was a passive
+>    listen — including FC `SERIAL7_PROTOCOL=9`, which never transmits — so total
+>    silence is *expected* behavior for an auto-adaptive unit that has heard nothing.
+> 3. **Bench proof:** run `cv50_mavlink_wake.py` (this folder) on HAL2026 — it sends
+>    MAVLink heartbeats to the CV50 through the CP2102 and reports anything that
+>    comes back (MAVLink DISTANCE_SENSOR or raw HR-LINK bytes). Run it once per
+>    TX/RX arrangement. If the sensor answers, wiring AND the theory are confirmed.
+> 4. **FC settings to try (this is the missed configuration):**
+>    `SERIAL7_PROTOCOL = 2` (MAVLink2 — the FC then *transmits* heartbeats on
+>    SERIAL7, waking the sensor), `SERIAL7_BAUD = 115`, `RNGFND1_TYPE = 10`
+>    (MAVLink), `RNGFND1_ORIENT = 25`, `RNGFND1_MIN = 0.1`, `RNGFND1_MAX = 45`.
+>    Power-cycle, then check Mission Planner → Status → `rangefinder1`.
+>    If no joy, try `SERIAL7_PROTOCOL = 1` (MAVLink1) once.
+> 5. Corvon sent an attached UART wiring + ArduPilot settings guide — obtain it and
+>    follow it verbatim if it differs from item 4.
 
 **Date:** 2026-07-07
 **Inputs:** `HANDOFF_CV50_Claude_Fable5.md` (Grok session), `reference/CV50.pdf` (read in
