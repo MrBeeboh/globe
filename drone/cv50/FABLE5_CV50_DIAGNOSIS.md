@@ -17,14 +17,20 @@
 >    MAVLink heartbeats to the CV50 through the CP2102 and reports anything that
 >    comes back (MAVLink DISTANCE_SENSOR or raw HR-LINK bytes). Run it once per
 >    TX/RX arrangement. If the sensor answers, wiring AND the theory are confirmed.
-> 4. **FC settings to try (this is the missed configuration):**
->    `SERIAL7_PROTOCOL = 2` (MAVLink2 — the FC then *transmits* heartbeats on
->    SERIAL7, waking the sensor), `SERIAL7_BAUD = 115`, `RNGFND1_TYPE = 10`
->    (MAVLink), `RNGFND1_ORIENT = 25`, `RNGFND1_MIN = 0.1`, `RNGFND1_MAX = 45`.
->    Power-cycle, then check Mission Planner → Status → `rangefinder1`.
->    If no joy, try `SERIAL7_PROTOCOL = 1` (MAVLink1) once.
-> 5. Corvon sent an attached UART wiring + ArduPilot settings guide — obtain it and
->    follow it verbatim if it differs from item 4.
+> 4. **FC settings — from Corvon's official "CV50 Ground Station Configuration
+>    Guide" (their example port SERIAL4 translated to our SERIAL7):**
+>    - `SERIAL7_PROTOCOL = 1` (**MAVLink1** — the FC then *transmits* heartbeats on
+>      SERIAL7, which wakes the auto-adaptive sensor)
+>    - `SERIAL7_BAUD = 115`, `SERIAL7_OPTIONS = 0`
+>    - `RNGFND1_TYPE = 10` (MAVLink), `RNGFND1_ORIENT = 25` (downward)
+>    - Range limits: guide says `RNGFND1_MAX_CM = 5000`, `RNGFND1_MIN_CM = 5`
+>      (pre-4.6 names); on ArduCopter 4.7 the params are in meters:
+>      `RNGFND1_MAX = 50`, `RNGFND1_MIN = 0.05`.
+>    - Write params, refresh, power-cycle, then Mission Planner → Status →
+>      `rangefinder1`. (Also clear the old attempt: leave `SCR_ENABLE` as wanted,
+>      but scripting is no longer needed for this sensor.)
+>    - Guide's success criterion (PX4 section, applies generally): the sensor
+>      emits MAVLink `DISTANCE_SENSOR` once it hears the FC.
 
 **Date:** 2026-07-07
 **Inputs:** `HANDOFF_CV50_Claude_Fable5.md` (Grok session), `reference/CV50.pdf` (read in
